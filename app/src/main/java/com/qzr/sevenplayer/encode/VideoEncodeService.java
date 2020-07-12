@@ -4,6 +4,7 @@ import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.support.annotation.NonNull;
+import android.util.Log;
 
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -30,16 +31,18 @@ public class VideoEncodeService {
 
     private CopyOnWriteArraySet<OnEncodeDataAvailable> bufferAvailableCallback;
 
+    private byte mVideoEncodeUseState = 0;
+    public final static byte ENCODE_STATUS_NEED_NONE = 0;
+    public final static byte ENCODE_STATUS_NEED_RECORD = 1;
+
+    private boolean mEncoding = false;
+    private boolean mTransmit = false;
 
     public synchronized static VideoEncodeService getInstance() {
         if (instance == null || instance.mMediaCodec == null) {
-            return VideoEncodeServiceHolder.videoEncodeService;
+            instance = new VideoEncodeService();
         }
         return instance;
-    }
-
-    private static class VideoEncodeServiceHolder {
-        private static VideoEncodeService videoEncodeService = new VideoEncodeService();
     }
 
     public VideoEncodeService() {
@@ -87,6 +90,23 @@ public class VideoEncodeService {
         }
     };
 
+    public boolean startVideoEncode() {
+        if (mEncoding) {
+            Log.i(TAG, "startVideoEncode: encoding!");
+            return true;
+        }
+        try {
+            mMediaCodec.start();
+            mEncoding = true;
+        } catch (Exception e) {
+            Log.e(TAG, "startVideoEncode: mediaCodec.start() is error");
+            e.printStackTrace();
+            mMediaCodec.stop();
+            releaseVideoEncode();
+        }
+        return mEncoding;
+    }
+
     public synchronized void releaseVideoEncode() {
         mMediaCodec.release();
         mMediaCodec = null;
@@ -95,7 +115,21 @@ public class VideoEncodeService {
         instance = null;
     }
 
+    public synchronized byte getmVideoEncodeUseState() {
+        return mVideoEncodeUseState;
+    }
+
+    public synchronized void addmVideoEncodeUseState(byte value) {
+        mVideoEncodeUseState = (byte) (mVideoEncodeUseState | value);
+    }
+
+    public synchronized void removeEncoderUseStatus(byte value) {
+        mVideoEncodeUseState = (byte) (mVideoEncodeUseState & (~value));
+    }
+
     public synchronized void addCallBack(OnEncodeDataAvailable onEncodeDataAvailable) {
         bufferAvailableCallback.add(onEncodeDataAvailable);
     }
+
+
 }

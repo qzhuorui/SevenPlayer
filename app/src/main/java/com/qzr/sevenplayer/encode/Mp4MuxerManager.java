@@ -5,6 +5,8 @@ import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.util.Log;
 
+import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
+
 import java.util.ArrayList;
 
 /**
@@ -21,6 +23,8 @@ public class Mp4MuxerManager {
 
     private String mFilePath;
     private int mMp4Fps;
+
+    private boolean mMixing = false;
 
     private MuxerParam mMuxerParam;
 
@@ -80,5 +84,17 @@ public class Mp4MuxerManager {
         }
         return this;
     }
+
+    public void muxer2File() {
+        mMixing = true;
+        ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(write2FileTask);
+    }
+
+    private Runnable write2FileTask = new Runnable() {
+        @Override
+        public void run() {
+
+        }
+    };
 
 }

@@ -5,6 +5,7 @@ import android.media.AudioRecord;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
+import android.util.Log;
 
 import java.util.ArrayList;
 
@@ -28,6 +29,8 @@ public class AudioEncodeService {
 
     private ArrayList<OnEncodeDataAvailable> bufferAvailableCallback;
 
+    private boolean mEncoding = false;
+    private boolean mTransmit = false;
 
     public synchronized static AudioEncodeService getInstance() {
         if (instance == null || instance.mMediaCodec == null) {
@@ -59,6 +62,26 @@ public class AudioEncodeService {
 
     }
 
+    public boolean startAudioEncode() {
+        if (mEncoding) {
+            return true;
+        }
+        try {
+            mMediaCodec.start();
+            mEncoding = true;
+        } catch (Exception e) {
+            Log.e(TAG, "startAudioEncode: mMediaCodec.start() is error");
+            e.printStackTrace();
+        }
+        return mEncoding;
+    }
+
+    public void releaseAudioEncode() {
+        mMediaCodec.release();
+        mMediaCodec = null;
+        bufferAvailableCallback.clear();
+        bufferAvailableCallback = null;
+    }
 
     public synchronized void addCallback(OnEncodeDataAvailable onEncodeDataAvailable) {
         bufferAvailableCallback.add(onEncodeDataAvailable);

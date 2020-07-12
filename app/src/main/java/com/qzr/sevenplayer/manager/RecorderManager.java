@@ -1,14 +1,21 @@
 package com.qzr.sevenplayer.manager;
 
+import android.Manifest;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioManager;
+import android.util.Log;
+import android.widget.Toast;
 
+import com.qzr.sevenplayer.base.BaseApplication;
 import com.qzr.sevenplayer.base.MessageWhat;
 import com.qzr.sevenplayer.encode.AudioEncodeService;
 import com.qzr.sevenplayer.encode.Mp4MuxerManager;
 import com.qzr.sevenplayer.encode.OnEncodeDataAvailable;
 import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.HandlerProcess;
+import com.qzr.sevenplayer.utils.PermissionHelper;
 import com.qzr.sevenplayer.utils.StorageUtil;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
@@ -29,6 +36,8 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     private static final String TAG = "RecorderManager";
 
     private boolean hasBuild = false;
+    public boolean mEncodeStarted = false;
+    public boolean mRecording2File = false;
 
     private int mTrackCount;
     private int mNeedTrackCount;
@@ -120,12 +129,85 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     }
 
     public boolean startRecord() {
+        //检查权限，存储
+        if (!checkMicPermission()) {
+            return false;
+        }
+        if (!hasBuild) {
+            throw new RuntimeException("recorder manager not build");
+        }
+        //Video
+        if (!startVideoModule()) {
+            Log.e(TAG, "startRecord: startVideoModule is error");
+            releaseRecord();
+            return false;
+        }
+        //Audio
+        if (!startAudioModule()) {
+            Log.d(TAG, "startRecord: startAudioModule is error");
+            releaseRecord();
+            return false;
+        }
+
+        mEncodeStarted = true;
+
+        recordMix2File();
+
+        startMicRun();
 
         return true;
     }
 
-    private boolean checkMicPermission(){
+    private boolean releaseRecord() {
+        hasBuild = false;
+        return true;
+    }
 
+    private boolean startAudioModule() {
+        return mAudioEncodeService.startAudioEncode();
+    }
+
+    private boolean startVideoModule() {
+        if (mVideoEncodeService == null) {
+            Log.i(TAG, "startVideoModule: mVideoEncodeService is null");
+            return false;
+        }
+        if (mVideoEncodeService.getmVideoEncodeUseState() == VideoEncodeService.ENCODE_STATUS_NEED_NONE) {
+            //开启video编码
+            boolean state = mVideoEncodeService.startVideoEncode();
+            if (!state) {
+                return false;
+            }
+        }
+        mVideoEncodeService.addmVideoEncodeUseState(VideoEncodeService.ENCODE_STATUS_NEED_RECORD);
+        return true;
+    }
+
+    private void recordMix2File() {
+        mRecording2File = true;
+        if (mMp4MuxerManager != null) {
+            mMp4MuxerManager.muxer2File();
+        }
+    }
+
+    private void startMicRun() {
+        AudioManager am = (AudioManager) BaseApplication.getContext().getSystemService(Context.AUDIO_SERVICE);
+        am.setMicrophoneMute(true);
+        HandlerProcess.getInstance().postDelayedOnBg(new Runnable() {
+            @Override
+            public void run() {
+                AudioManager am = (AudioManager) BaseApplication.getContext().getSystemService(Context.AUDIO_SERVICE);
+                am.setMicrophoneMute(false);
+            }
+        }, 1500);
+    }
+
+    private boolean checkMicPermission() {
+        boolean micPermission = PermissionHelper.hasPermission(BaseApplication.getContext(), Manifest.permission.RECORD_AUDIO);
+        if (!micPermission) {
+            Toast.makeText(BaseApplication.getContext(), "无麦克风权限", Toast.LENGTH_SHORT).show();
+        }
+        return micPermission;
     }
 
     @Override
