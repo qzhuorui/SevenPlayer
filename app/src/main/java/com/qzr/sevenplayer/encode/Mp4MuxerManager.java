@@ -8,6 +8,8 @@ import android.util.Log;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.util.ArrayList;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @ProjectName: SevenPlayer
@@ -24,6 +26,7 @@ public class Mp4MuxerManager {
     private String mFilePath;
     private int mMp4Fps;
 
+    private boolean mStarted = false;
     private boolean mMixing = false;
 
     private MuxerParam mMuxerParam;
@@ -35,9 +38,13 @@ public class Mp4MuxerManager {
 
     private ArrayList<MuxerBuffer> mMuxerBufferArrayList;
 
+    public static int SOURCE_AUDIO = 0;
+    public static int SOURCE_VIDEO = 1;
+
+    private Lock lock = new ReentrantLock();
+    private final Object sync = new Object();
 
     public class MuxerParam {
-        public String parenPath;
         public String fileAbsolutePath;
         public String fileName;
         public String fileTypeName;
@@ -45,8 +52,6 @@ public class Mp4MuxerManager {
         public int fps;
         public int width;
         public int height;
-        public boolean divide = false;
-        public int divideSeq = 0;
     }
 
     public class MuxerBuffer {
@@ -83,6 +88,51 @@ public class Mp4MuxerManager {
             e.printStackTrace();
         }
         return this;
+    }
+
+    public synchronized void startMp4MuxerManager() {
+        if (mMediaMuxer != null) {
+            Log.i(TAG, "startMp4MuxerManager: ");
+            lock.lock();
+            try {
+                mMediaMuxer.start();
+                mStarted = true;
+            } catch (Exception e) {
+                e.printStackTrace();
+                releaseMp4MuxerManager();
+                mMediaMuxer = null;
+            }
+            lock.unlock();
+        }
+    }
+
+    public synchronized void stopMp4MuxerManager() {
+        lock.lock();
+        if (mMediaMuxer != null) {
+            mMixing = false;
+        }
+        lock.unlock();
+
+        synchronized (sync) {
+            sync.notify();
+        }
+    }
+
+    public synchronized void releaseMp4MuxerManager() {
+        if (mMediaMuxer != null) {
+            lock.lock();
+            try {
+                mMediaMuxer.release();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            mMediaMuxer = null;
+            mVideoFormat = null;
+            mAudioFormat = null;
+            mStarted = false;
+            mMixing = false;
+            lock.unlock();
+        }
     }
 
     public void muxer2File() {

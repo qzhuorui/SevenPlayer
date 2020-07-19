@@ -10,4 +10,10 @@ package com.qzr.sevenplayer.base;
  */
 public class MessageWhat {
     public final static int TAKE_PIC = 1;
+
+    public final static int START_RECORDER = 2;
+    public final static int STOP_RECORDER = 3;
+
+    public final static int START_HANDLE_YUV = 4;
+    public final static int STOP_HANDLE_YUV = 5;
 }

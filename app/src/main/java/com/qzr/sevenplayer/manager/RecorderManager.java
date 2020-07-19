@@ -64,7 +64,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
 
         public Date date = new Date();
         public String fileNamePrefix = StorageUtil.spFormat.get().format(date);
-        public String videoFilePath = StorageUtil.getOutPutVedioFile().getAbsolutePath() + File.separator + fileNamePrefix + "_VIDEO" + ".mp4";
+        public String videoFilePath = StorageUtil.getOutPutVedioFile().getAbsolutePath();
     }
 
     public RecorderManager buildRecorder() {
@@ -79,6 +79,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         // TODO: 2020/7/11 需要判断存储空间
 
         hasBuild = true;
+        mTrackCount = 0;
         mNeedTrackCount = 2;//video 轨道数为2
 
         /**
@@ -89,7 +90,6 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         muxerParam.width = param.width;
         muxerParam.height = param.height;
         muxerParam.fps = 30;
-        muxerParam.parenPath = StorageUtil.getOutPutVedioFile().getAbsolutePath() + File.separator;
         muxerParam.fileName = param.fileNamePrefix + "_VIDEO";
         muxerParam.fileTypeName = ".mp4";
         muxerParam.fileCreateTime = System.currentTimeMillis();
@@ -129,6 +129,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     }
 
     public boolean startRecord() {
+        Log.i(TAG, "startRecord: ");
         //检查权限，存储
         if (!checkMicPermission()) {
             return false;
@@ -136,24 +137,66 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         if (!hasBuild) {
             throw new RuntimeException("recorder manager not build");
         }
+
         //Video
         if (!startVideoModule()) {
             Log.e(TAG, "startRecord: startVideoModule is error");
             releaseRecord();
             return false;
         }
+
         //Audio
         if (!startAudioModule()) {
             Log.d(TAG, "startRecord: startAudioModule is error");
+            releaseVideoModule();
             releaseRecord();
             return false;
         }
 
         mEncodeStarted = true;
 
-        recordMix2File();
+        startRecordMix2File();
 
         startMicRun();
+
+        return true;
+    }
+
+    public synchronized boolean stopRecord() {
+        mEncodeStarted = false;
+        if (mVideoEncodeService == null) {
+            return false;
+        }
+
+        /**
+         * Video。无其他地方使用，直接释放encoder
+         */
+        mVideoEncodeService.removeEncoderUseStatus(VideoEncodeService.ENCODE_STATUS_NEED_RECORD);
+        if (mVideoEncodeService.getmVideoEncodeUseState() == VideoEncodeService.ENCODE_STATUS_NEED_NONE) {
+            mVideoEncodeService.stopVideoEncoding();
+            mVideoEncodeService.removeCallBack(this);
+            mVideoEncodeService.stopVideoEncode();
+            mVideoEncodeService.releaseVideoEncode();
+            mVideoEncodeService = null;
+        } else {
+            mVideoEncodeService.removeCallBack(this);
+            mTrackCount--;
+        }
+
+        /**
+         * Audio
+         */
+        mAudioEncodeService.stopAudioEncoding();
+        mAudioEncodeService.removeCallback(this);
+        mAudioEncodeService.stopAudioEncode();
+        mAudioEncodeService.releaseAudioEncode();
+        mAudioEncodeService = null;
+
+        releaseRecord();
+
+        QzrMicManager.getInstance().removePcmDataGetCallback(mAudioEncodeService);
+
+        stopRecordMix2File();
 
         return true;
     }
@@ -179,14 +222,36 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
                 return false;
             }
         }
+        //改变videoEncodec状态
         mVideoEncodeService.addmVideoEncodeUseState(VideoEncodeService.ENCODE_STATUS_NEED_RECORD);
         return true;
     }
 
-    private void recordMix2File() {
+    private void releaseVideoModule() {
+        mVideoEncodeService.removeEncoderUseStatus(VideoEncodeService.ENCODE_STATUS_NEED_RECORD);
+        if (mVideoEncodeService.getmVideoEncodeUseState() == VideoEncodeService.ENCODE_STATUS_NEED_NONE) {
+            mVideoEncodeService.stopVideoEncoding();
+            mVideoEncodeService.stopVideoEncode();
+        }
+    }
+
+    private void startRecordMix2File() {
         mRecording2File = true;
         if (mMp4MuxerManager != null) {
             mMp4MuxerManager.muxer2File();
+        }
+    }
+
+    private void stopRecordMix2File() {
+        if (!mRecording2File) {
+            return;
+        }
+        mRecording2File = false;
+        if (mMp4MuxerManager != null) {
+            mMp4MuxerManager.stopMp4MuxerManager();
+            mMp4MuxerManager.releaseMp4MuxerManager();
+            mMp4MuxerManager = null;
+            hasBuild = false;
         }
     }
 
@@ -200,6 +265,8 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
                 am.setMicrophoneMute(false);
             }
         }, 1500);
+        QzrMicManager.getInstance().buildMic().startMicManager();
+        QzrMicManager.getInstance().addPcmDataGetCallback(mAudioEncodeService);
     }
 
     private boolean checkMicPermission() {

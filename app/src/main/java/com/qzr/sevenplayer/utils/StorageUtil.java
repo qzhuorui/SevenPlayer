@@ -53,7 +53,7 @@ public class StorageUtil {
 
     public static File getOutPutVedioFile() {
         String timestamp = spFormat.get().format(new Date());
-        return new File(getSDPath() + "/" + getDirName() + "/video");
+        return new File(getSDPath() + "/" + getDirName() + "/video/",timestamp + ".mp4");
     }
 
 }

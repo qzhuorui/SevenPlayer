@@ -10,17 +10,21 @@ import android.view.MotionEvent;
 import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
+import android.widget.Toast;
 
 import com.qzr.sevenplayer.R;
 import com.qzr.sevenplayer.base.BaseActivity;
+import com.qzr.sevenplayer.base.MessageWhat;
+import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.manager.QzrCameraManager;
 import com.qzr.sevenplayer.manager.RecorderManager;
 import com.qzr.sevenplayer.service.CameraSensor;
+import com.qzr.sevenplayer.utils.HandlerProcess;
 import com.qzr.sevenplayer.widget.FocusViewWidget;
 
 import butterknife.BindView;
 
-public class RecorderActivity extends BaseActivity implements TextureView.SurfaceTextureListener, View.OnTouchListener, CameraSensor.CameraSensorListener, View.OnClickListener, View.OnLongClickListener ,Camera.PreviewCallback{
+public class RecorderActivity extends BaseActivity implements TextureView.SurfaceTextureListener, View.OnTouchListener, CameraSensor.CameraSensorListener, View.OnClickListener, View.OnLongClickListener, HandlerProcess.HandlerCallback {
 
     private static final String TAG = "RecorderActivity";
 
@@ -33,6 +37,10 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
 
     private boolean isFocusing = false;
     private CameraSensor mCameraSensor;
+
+    private boolean isRecording = false;
+    private RecorderManager recorderManager;
+
 
     @Override
     protected void onResume() {
@@ -65,6 +73,8 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         QzrCameraManager.getInstance().buildCamera(surface).startPreView();
+        //不设置camera callback，则onPreviewFrame不会进去
+        QzrCameraManager.getInstance().setPreViewCallBack(VideoEncodeService.getInstance());
         mCameraSensor.startCameraSensor();
     }
 
@@ -125,8 +135,8 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
 
     @Override
     public void onClick(View v) {
-        switch (v.getId()){
-            case R.id.btn_video:{
+        switch (v.getId()) {
+            case R.id.btn_video: {
                 RecorderManager.getInstance().takePicture();
                 break;
             }
@@ -135,11 +145,33 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
 
     @Override
     public boolean onLongClick(View v) {
+        if (isRecording) {
+            HandlerProcess.getInstance().post(MessageWhat.STOP_RECORDER, 0, this);
+        } else {
+            HandlerProcess.getInstance().post(MessageWhat.START_RECORDER, 0, this);
+        }
         return false;
     }
 
     @Override
-    public void onPreviewFrame(byte[] data, Camera camera) {
-
+    public void handleMsg(int what, Object o) {
+        switch (what) {
+            case MessageWhat.STOP_RECORDER: {
+                Toast.makeText(mContext, "停止录像", Toast.LENGTH_SHORT).show();
+                RecorderManager.getInstance().stopRecord();
+                isRecording = false;
+                break;
+            }
+            case MessageWhat.START_RECORDER: {
+                Toast.makeText(mContext, "开始录像", Toast.LENGTH_SHORT).show();
+                recorderManager = RecorderManager.getInstance().buildRecorder();
+                recorderManager.startRecord();
+                isRecording = true;
+                break;
+            }
+            default:
+                break;
+        }
     }
+
 }

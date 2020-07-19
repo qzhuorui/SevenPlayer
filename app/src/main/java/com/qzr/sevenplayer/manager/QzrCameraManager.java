@@ -200,6 +200,10 @@ public class QzrCameraManager implements Camera.ErrorCallback {
         releaseCamera();
     }
 
+    public void setPreViewCallBack(Camera.PreviewCallback preViewCallBack) {
+        mCamera.setPreviewCallback(preViewCallBack);
+    }
+
     public boolean isPreviewing() {
         return previewing;
     }

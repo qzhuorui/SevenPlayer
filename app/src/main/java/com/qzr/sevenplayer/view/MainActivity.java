@@ -79,10 +79,13 @@ public class MainActivity extends BaseActivity implements PermissionInterface, V
     private static int REQUEST_CAMERA_PERMISSION = 100;
     private static int REQUEST_READ_STORAGE_PERMISSION = 100 + 1;
     private static int REQUEST_WRITE_STORAGE_PERMISSION = 100 + 2;
+    private static int REQUEST_RECORD_AUDIO = 100 + 3;
+
 
     private void permissionGet() {
         permissionHelper = new PermissionHelper(this, this);
         permissionHelper.requestPermission(Manifest.permission.CAMERA, REQUEST_CAMERA_PERMISSION);
+        permissionHelper.requestPermission(Manifest.permission.RECORD_AUDIO, REQUEST_RECORD_AUDIO);
         permissionHelper.requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, REQUEST_READ_STORAGE_PERMISSION);
         permissionHelper.requestPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, REQUEST_WRITE_STORAGE_PERMISSION);
     }
