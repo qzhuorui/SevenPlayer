@@ -116,8 +116,8 @@ public class CameraUtil {
     textview 点击坐标转为 camera对焦坐标
      */
     public static Point convertToCameraPoint(Size screenSize, Point focusPoint) {
-        int newX = focusPoint.y * 2000/screenSize.getHeight() - 1000;
-        int newY = -focusPoint.x * 2000/screenSize.getWidth() + 1000;
+        int newX = focusPoint.y * 2000 / screenSize.getHeight() - 1000;
+        int newY = -focusPoint.x * 2000 / screenSize.getWidth() + 1000;
         return new Point(newX, newY);
     }
 
@@ -137,6 +137,16 @@ public class CameraUtil {
             return min;
         }
         return s;
+    }
+
+    //NV21颜色转换
+    public static byte[] NV21toI420SemiPlanar(byte[] nv21bytes, byte[] i420bytes, int width, int height) {
+        System.arraycopy(nv21bytes, 0, i420bytes, 0, width * height);
+        for (int i = width * height; i < nv21bytes.length; i += 2) {
+            i420bytes[i] = nv21bytes[i + 1];
+            i420bytes[i + 1] = nv21bytes[i];
+        }
+        return i420bytes;
     }
 
 }

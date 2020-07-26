@@ -74,6 +74,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         QzrCameraManager.getInstance().buildCamera(surface).startPreView();
         //不设置camera callback，则onPreviewFrame不会进去
+        // TODO: 2020/7/25 后续需要再优化camera的预览，需要给camera设置callback，复用缓冲buffer
         QzrCameraManager.getInstance().setPreViewCallBack(VideoEncodeService.getInstance());
         mCameraSensor.startCameraSensor();
     }

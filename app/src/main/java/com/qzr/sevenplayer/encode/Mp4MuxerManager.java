@@ -7,6 +7,7 @@ import android.util.Log;
 
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -36,22 +37,29 @@ public class Mp4MuxerManager {
     private MediaFormat mAudioFormat;
     private MediaCodec.BufferInfo mBufferInfo = null;
 
+    private long lastAudioTimestamp = 0;
+    private long lastVideoTimestamp = 0;
+
+    private int writeVideoIndex = -1;
+    private int writeAudioIndex = -1;
+
+    private int frontCount = 0;
+    private int tailCount = 0;
+    private int preLen = 0;
     private ArrayList<MuxerBuffer> mMuxerBufferArrayList;
 
     public static int SOURCE_AUDIO = 0;
     public static int SOURCE_VIDEO = 1;
 
-    private Lock lock = new ReentrantLock();
-    private final Object sync = new Object();
+    private Lock muxerWriteLock = new ReentrantLock();
+    private final Object byteFrameSync = new Object();
 
     public class MuxerParam {
-        public String fileAbsolutePath;
         public String fileName;
         public String fileTypeName;
         public long fileCreateTime;
+        public String fileAbsolutePath;
         public int fps;
-        public int width;
-        public int height;
     }
 
     public class MuxerBuffer {
@@ -62,10 +70,6 @@ public class Mp4MuxerManager {
         long timeStamp;
     }
 
-    public MuxerParam getmMuxerParam() {
-        return mMuxerParam;
-    }
-
     public Mp4MuxerManager buildMp4MuxerManager(MuxerParam muxerParam) {
         mMuxerParam = muxerParam;
         mFilePath = muxerParam.fileAbsolutePath;
@@ -74,17 +78,17 @@ public class Mp4MuxerManager {
         try {
             mMediaMuxer = new MediaMuxer(mFilePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
-            mVideoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, muxerParam.width, muxerParam.height);
+            mVideoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
             mAudioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 16000, 1);
 
             mBufferInfo = new MediaCodec.BufferInfo();
 
-            if (mMediaMuxer != null) {
-                Log.i(TAG, "buildMp4MuxerManager: success");
-            } else {
-                Log.i(TAG, "buildMp4MuxerManager: failed");
-            }
+            frontCount = 0;
+            tailCount = 0;
+            preLen = mMp4Fps * 20;
+            mMuxerBufferArrayList = new ArrayList<>(preLen);
         } catch (Exception e) {
+            Log.e(TAG, "buildMp4MuxerManager: error");
             e.printStackTrace();
         }
         return this;
@@ -92,8 +96,7 @@ public class Mp4MuxerManager {
 
     public synchronized void startMp4MuxerManager() {
         if (mMediaMuxer != null) {
-            Log.i(TAG, "startMp4MuxerManager: ");
-            lock.lock();
+            muxerWriteLock.lock();
             try {
                 mMediaMuxer.start();
                 mStarted = true;
@@ -102,25 +105,25 @@ public class Mp4MuxerManager {
                 releaseMp4MuxerManager();
                 mMediaMuxer = null;
             }
-            lock.unlock();
+            muxerWriteLock.unlock();
         }
     }
 
     public synchronized void stopMp4MuxerManager() {
-        lock.lock();
+        muxerWriteLock.lock();
         if (mMediaMuxer != null) {
             mMixing = false;
         }
-        lock.unlock();
+        muxerWriteLock.unlock();
 
-        synchronized (sync) {
-            sync.notify();
+        synchronized (byteFrameSync) {
+            byteFrameSync.notify();
         }
     }
 
     public synchronized void releaseMp4MuxerManager() {
         if (mMediaMuxer != null) {
-            lock.lock();
+            muxerWriteLock.lock();
             try {
                 mMediaMuxer.release();
             } catch (Exception e) {
@@ -129,13 +132,122 @@ public class Mp4MuxerManager {
             mMediaMuxer = null;
             mVideoFormat = null;
             mAudioFormat = null;
+            mBufferInfo = null;
             mStarted = false;
             mMixing = false;
-            lock.unlock();
+            muxerWriteLock.unlock();
         }
     }
 
-    public void muxer2File() {
+    public void buildSpsPpsParam(byte[] sps, byte[] pps) {
+        byte[] spsTmp = new byte[sps.length];
+        System.arraycopy(sps, 0, spsTmp, 0, sps.length);
+
+        byte[] ppsTmp = new byte[pps.length];
+        System.arraycopy(pps, 0, ppsTmp, 0, pps.length);
+
+        mVideoFormat.setByteBuffer("csd-0", ByteBuffer.wrap(spsTmp));
+        mVideoFormat.setByteBuffer("csd-1", ByteBuffer.wrap(ppsTmp));
+
+        writeVideoIndex = mMediaMuxer.addTrack(mVideoFormat);
+    }
+
+    public void buildAdtsParam(byte[] adts) {
+        byte[] adtsTmp = new byte[adts.length];
+        System.arraycopy(adts, 0, adtsTmp, 0, adts.length);
+
+        mAudioFormat.setByteBuffer("csd-0", ByteBuffer.wrap(adtsTmp));
+
+        writeAudioIndex = mMediaMuxer.addTrack(mAudioFormat);
+    }
+
+    private boolean isKeyFrame(byte[] output) {
+        if ((output[0] == 0x0) && (0x0 == output[1]) && (output[2] == 0x0) && (0x01 == output[3])) {
+            if ((byte) (output[4] & 0x1f) == 5) {
+                return true;
+            }
+
+        } else if ((output[0] == 0x0) && (0x0 == output[1]) && (output[2] == 0x01)) {
+
+            if ((byte) (output[3] & 0x1f) == 5) {
+                return true;
+            }
+
+        }
+        return false;
+    }
+
+    private long getVideoTimeStamp() {
+        return System.currentTimeMillis() * 1000;
+    }
+
+    private long getAudioTimeStamp() {
+        return System.currentTimeMillis() * 1000;
+    }
+
+    private int getCurrentSize() {
+        return (tailCount + preLen - frontCount) % preLen;
+    }
+
+    private void frontCountAdd() {
+        frontCount++;
+        if (frontCount == preLen) {
+            frontCount = 0;
+        }
+    }
+
+    private void frontCountMinus() {
+        frontCount--;
+        if (frontCount == -1) {
+            frontCount = preLen - 1;
+        }
+    }
+
+    private void tailCountAdd() {
+        tailCount++;
+        if (tailCount == preLen) {
+            tailCount = 0;
+        }
+    }
+
+    public void muxerMix2Data(byte[] data, int length, int source) {
+        if (!mStarted) {
+            return;
+        }
+        if (mMediaMuxer != null) {
+            MuxerBuffer muxerBuffer = new MuxerBuffer();
+            if (source == SOURCE_VIDEO) {
+                if (isKeyFrame(data)) {
+                    muxerBuffer.flags = MediaCodec.BUFFER_FLAG_KEY_FRAME;
+                } else {
+                    muxerBuffer.flags = MediaCodec.BUFFER_FLAG_PARTIAL_FRAME;
+                }
+            }
+            muxerBuffer.length = length;
+            muxerBuffer.data = data;
+            muxerBuffer.source = source;
+            if (source == SOURCE_VIDEO) {
+                muxerBuffer.timeStamp = getVideoTimeStamp();
+            } else {
+                muxerBuffer.timeStamp = getAudioTimeStamp();
+            }
+            synchronized (byteFrameSync) {
+                Log.d(TAG, "muxerMix2Data: put data:" + (source == 1 ? "video" : "audio"));
+                if (mMuxerBufferArrayList.size() < preLen) {
+                    mMuxerBufferArrayList.add(tailCount, muxerBuffer);
+                } else {
+                    mMuxerBufferArrayList.set(tailCount, muxerBuffer);
+                }
+                tailCountAdd();
+                if (tailCount == frontCount) {
+                    frontCountAdd();
+                }
+                byteFrameSync.notify();
+            }
+        }
+    }
+
+    public void muxerMix2File() {
         mMixing = true;
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(write2FileTask);
     }
@@ -143,8 +255,95 @@ public class Mp4MuxerManager {
     private Runnable write2FileTask = new Runnable() {
         @Override
         public void run() {
+            boolean keyFlag = false;
+            lastAudioTimestamp = 0;
+            lastVideoTimestamp = 0;
+            while (mMixing) {
+                MuxerBuffer muxerBuffer = null;
+                synchronized (byteFrameSync) {
+                    int size = getCurrentSize();
+                    if (size <= 0) {
+                        try {
+                            //sleep 不会释放锁，wait会释放
+                            byteFrameSync.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        continue;
+                    }
+                    muxerBuffer = mMuxerBufferArrayList.get(frontCount);
+                    frontCountAdd();
+                }
 
+                if (muxerBuffer != null && mBufferInfo != null && muxerBuffer.length > 0) {
+                    ByteBuffer inputBuffer = ByteBuffer.allocate(muxerBuffer.length);
+                    inputBuffer.put(muxerBuffer.data);
+
+                    mBufferInfo.flags = muxerBuffer.flags;
+                    mBufferInfo.size = muxerBuffer.length;
+                    mBufferInfo.presentationTimeUs = muxerBuffer.timeStamp;
+                    mBufferInfo.offset = 0;
+
+                    if (muxerBuffer.source == SOURCE_VIDEO) {
+                        if (keyFlag) {
+                            syncWriteBuffer(writeVideoIndex, inputBuffer, mBufferInfo);
+                        } else {
+                            Log.e(TAG, "run: 1");
+                            if (mBufferInfo.flags == MediaCodec.BUFFER_FLAG_KEY_FRAME) {
+                                Log.e(TAG, "run: 2");
+                                syncWriteBuffer(writeVideoIndex, inputBuffer, mBufferInfo);
+                                keyFlag = true;
+                            }
+                        }
+                    } else if (muxerBuffer.source == SOURCE_AUDIO) {
+                        syncWriteBuffer(writeAudioIndex, inputBuffer, mBufferInfo);
+                    }
+                    inputBuffer.clear();
+                }
+            }
         }
     };
+
+    private void syncWriteBuffer(int mediaIndex, ByteBuffer byteBuffer, MediaCodec.BufferInfo bufferInfo) {
+        muxerWriteLock.lock();
+        if (mediaIndex == writeVideoIndex) {
+            if (lastVideoTimestamp != 0) {
+                if (lastVideoTimestamp >= bufferInfo.presentationTimeUs) {
+                    bufferInfo.presentationTimeUs = lastVideoTimestamp + 1000;
+                    Log.e(TAG, "syncWriteBuffer: video time error");
+                }
+            }
+        } else if (mediaIndex == writeAudioIndex) {
+            if (lastAudioTimestamp != 0) {
+                if (lastAudioTimestamp >= bufferInfo.presentationTimeUs) {
+                    bufferInfo.presentationTimeUs = lastAudioTimestamp + 1000;
+                    Log.e(TAG, "syncWriteBuffer: audio time error");
+                }
+            }
+        }
+
+        if (mMixing && mStarted) {
+            try {
+                mMediaMuxer.writeSampleData(mediaIndex, byteBuffer, bufferInfo);
+                if (mediaIndex == writeVideoIndex) {
+                    Log.i(TAG, "syncWriteBuffer: write video");
+                } else {
+                    Log.i(TAG, "syncWriteBuffer: write audio");
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.e(TAG, "syncWriteBuffer: mediamuxer write error1");
+            }
+        } else {
+            Log.e(TAG, "syncWriteBuffer: mediamuxer write error2");
+        }
+
+        if (mediaIndex == writeVideoIndex) {
+            lastVideoTimestamp = bufferInfo.presentationTimeUs;
+        } else {
+            lastAudioTimestamp = bufferInfo.presentationTimeUs;
+        }
+        muxerWriteLock.unlock();
+    }
 
 }

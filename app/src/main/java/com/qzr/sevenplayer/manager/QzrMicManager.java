@@ -3,7 +3,6 @@ package com.qzr.sevenplayer.manager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
-import android.util.Log;
 
 import com.qzr.sevenplayer.encode.QueueArray;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
@@ -84,7 +83,6 @@ public class QzrMicManager {
         mPcmBuffer.clearQueue();
 
         if (mAudioRecord != null) {
-            Log.i(TAG, "startMic: startMic");
             mAudioRecord.startRecording();
             mMicStarted = true;
 
@@ -125,7 +123,6 @@ public class QzrMicManager {
     private Runnable enqueuePcmTask = new Runnable() {
         @Override
         public void run() {
-            Log.i(TAG, "run: enqueuePcmTask");
             int audioDataLen = 0;
             byte[] audioData = new byte[mBufferSize];
 
@@ -135,7 +132,6 @@ public class QzrMicManager {
                 if (audioDataLen == 0) {
                     try {
                         Thread.sleep(2);
-                        Log.e(TAG, "run: audioDataLen == 0 sleep");
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -152,7 +148,6 @@ public class QzrMicManager {
     private Runnable feedBackPcmTask = new Runnable() {
         @Override
         public void run() {
-            Log.i(TAG, "run: feedBackPcmTask");
             while (mMicStarted) {
                 byte[] tmp = mPcmBuffer.dequeue(mBufferSize);
 
