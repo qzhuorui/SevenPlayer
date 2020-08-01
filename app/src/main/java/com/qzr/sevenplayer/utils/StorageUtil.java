@@ -51,9 +51,13 @@ public class StorageUtil {
         return new File(getSDPath() + "/" + getDirName() + "/image/", timestamp + ".jpg");
     }
 
-    public static File getOutPutVedioFile() {
+    public static File getOutPutVideoFile() {
         String timestamp = spFormat.get().format(new Date());
-        return new File(getSDPath() + "/" + getDirName() + "/video/",timestamp + ".mp4");
+        return new File(getSDPath() + "/" + getDirName() + "/video/", timestamp + ".mp4");
+    }
+
+    public static File getOutPutLogFile() {
+        return new File(getSDPath() + "/" + getDirName() + "/log/");
     }
 
 }

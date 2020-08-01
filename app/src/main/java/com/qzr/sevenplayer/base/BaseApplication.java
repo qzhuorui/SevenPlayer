@@ -3,6 +3,8 @@ package com.qzr.sevenplayer.base;
 import android.app.Application;
 import android.content.Context;
 
+import com.qzr.sevenplayer.utils.CrashHandler;
+
 /**
  * @ProjectName: SevenPlayer
  * @Package: com.qzr.sevenplayer.base
@@ -19,6 +21,7 @@ public class BaseApplication extends Application {
     public void onCreate() {
         super.onCreate();
         mContext = getApplicationContext();
+        CrashHandler.getInstance().init(mContext);
     }
 
     public static Context getContext() {

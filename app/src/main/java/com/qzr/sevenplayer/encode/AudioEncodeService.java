@@ -12,6 +12,8 @@ import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.Queue;
 
 /**
  * @ProjectName: SevenPlayer
@@ -33,17 +35,12 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
     private MediaFormat mMediaFormat;
 
     private byte[] csd0 = null;
-    private byte[] outputData;
-    private ArrayList<byte[]> frameBytes;
+    private Queue<byte[]> encodeDataQueue;
 
     private ArrayList<OnEncodeDataAvailable> bufferAvailableCallback;
 
     private boolean mEncoding = false;
     private boolean mTransmit = false;
-
-    int frontIndex = 0;
-    int lastIndex = 0;
-    private final int LIST_SIZE = 10;
 
     public synchronized static AudioEncodeService getInstance() {
         if (instance == null || instance.mMediaCodec == null) {
@@ -66,7 +63,8 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
             mMediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize);
 
             mMediaCodec.configure(mMediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-            frameBytes = new ArrayList<>(LIST_SIZE);
+
+            encodeDataQueue = new LinkedList<>();
             bufferAvailableCallback = new ArrayList<>(2);
 
         } catch (Exception e) {
@@ -114,90 +112,78 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
     public void releaseAudioEncode() {
         mMediaCodec.release();
         mMediaCodec = null;
-        lastIndex = frontIndex = 0;
-        frameBytes.clear();
+        encodeDataQueue.clear();
         bufferAvailableCallback.clear();
         bufferAvailableCallback = null;
+        encodeDataQueue = null;
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().remove(transmitAudioDataTask);
     }
 
     private void handlePCMdata(byte[] pcmBuffer) {
-        int inputIndex;
-        int outPutIndex;
+        if (pcmBuffer != null) {
+            try {
+                int inputIndex = mMediaCodec.dequeueInputBuffer(0);//从input缓冲区申请  buffer的编号  index
+                if (inputIndex >= 0) {
+                    long pts = getPts();
+                    ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
+                    inputBuffer.clear();//清除数据，可能有上次写入的数据
+                    inputBuffer.put(pcmBuffer);//PCM数据填充进 inputBuffer
+                    inputBuffer.limit(pcmBuffer.length);
+                    mMediaCodec.queueInputBuffer(inputIndex, 0, pcmBuffer.length, pts, 0);//将 buffer 入 MediaCodec队列
+                }
 
-        int outBitSize;
+                MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
+                int outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);//申请处理完后的输出buffer
 
-        MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
+                if (outPutIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    MediaFormat mediaFormat = mMediaCodec.getOutputFormat();
+                    ByteBuffer byteBuffer = mediaFormat.getByteBuffer("csd-0");
+                    csd0 = byteBuffer.array();
 
-        inputIndex = mMediaCodec.dequeueInputBuffer(0);//从input缓冲区申请  buffer的编号  index
-        if (inputIndex < 0) {
-            return;
-        }
-        ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
-        inputBuffer.clear();//清除数据，可能有上次写入的数据
-        inputBuffer.limit(pcmBuffer.length);
-        inputBuffer.put(pcmBuffer);//PCM数据填充进 inputBuffer
-
-        mMediaCodec.queueInputBuffer(inputIndex, 0, pcmBuffer.length, 0, 0);//将 buffer 入 MediaCodec队列
-
-        outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);//申请处理完后的输出buffer
-        if (outPutIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-            MediaFormat mediaFormat = mMediaCodec.getOutputFormat();
-            ByteBuffer byteBuffer = mediaFormat.getByteBuffer("csd-0");
-            csd0 = byteBuffer.array();
-
-            if (bufferAvailableCallback != null && bufferAvailableCallback.size() > 0) {
-                for (OnEncodeDataAvailable onEncodeDataAvailable : bufferAvailableCallback) {
-                    if (onEncodeDataAvailable != null) {
-                        onEncodeDataAvailable.onCdsInfoUpdate(csd0, null, Mp4MuxerManager.SOURCE_AUDIO);
+                    if (bufferAvailableCallback != null && bufferAvailableCallback.size() > 0) {
+                        for (OnEncodeDataAvailable onEncodeDataAvailable : bufferAvailableCallback) {
+                            if (onEncodeDataAvailable != null) {
+                                onEncodeDataAvailable.onCdsInfoUpdate(csd0, null, Mp4MuxerManager.SOURCE_AUDIO);
+                            }
+                        }
                     }
                 }
+
+                while (outPutIndex >= 0) {
+                    ByteBuffer outputBuffer = mMediaCodec.getOutputBuffer(outPutIndex);//拿到输出buffer
+
+                    if (encodeBufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
+                        encodeBufferInfo.size = 0;
+                    }
+
+                    if (encodeBufferInfo.size > 0) {
+                        byte[] outputData = new byte[encodeBufferInfo.size];
+                        outputBuffer.get(outputData);//将编码得到的aac数据，取出到byte[]中
+                        outputBuffer.position(encodeBufferInfo.offset);
+                        outputBuffer.limit(encodeBufferInfo.offset + encodeBufferInfo.size);
+                        enqueueFrame(outputData, encodeBufferInfo.size);
+                    }
+
+                    mMediaCodec.releaseOutputBuffer(outPutIndex, false);
+                    encodeBufferInfo = new MediaCodec.BufferInfo();
+                    outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        }
-        while (outPutIndex >= 0) {
-            outBitSize = encodeBufferInfo.size;
-            outputData = new byte[outBitSize];
-
-            ByteBuffer outputBuffer = mMediaCodec.getOutputBuffer(outPutIndex);//拿到输出buffer
-            outputBuffer.position(encodeBufferInfo.offset);
-            outputBuffer.limit(encodeBufferInfo.offset + outBitSize);
-
-            outputBuffer.get(outputData, 0, outBitSize);//将编码得到的aac数据，取出到byte[]中
-
-            if (outBitSize != 0 && encodeBufferInfo.flags != MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
-                enqueueFrame(outputData, outBitSize);
-            }
-
-            outputBuffer.position(encodeBufferInfo.offset);
-            mMediaCodec.releaseOutputBuffer(outPutIndex, false);
-            outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+        } else {
+            Log.d(TAG, "handlePCMdata: PCMData is null");
         }
     }
 
     private synchronized void enqueueFrame(byte[] buffer, int pos) {
         byte[] tmp = new byte[pos];
         System.arraycopy(buffer, 0, tmp, 0, pos);
+        encodeDataQueue.offer(tmp);
+    }
 
-        while (true) {
-            if ((lastIndex + 1) % LIST_SIZE == frontIndex) {
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            } else {
-                if (frameBytes.size() == LIST_SIZE) {
-                    frameBytes.set(lastIndex, tmp);
-                } else {
-                    frameBytes.add(tmp);
-                }
-                lastIndex++;
-                if (lastIndex == LIST_SIZE) {
-                    lastIndex = 0;
-                }
-                break;
-            }
-        }
+    private long getPts() {
+        return System.nanoTime() / 1000L;
     }
 
     public void startTransmitAudioData() {
@@ -212,7 +198,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
         @Override
         public void run() {
             while (true) {
-                if (frameBytes == null) {
+                if (encodeDataQueue == null) {
                     mTransmit = false;
                 } else {
                     byte[] tmpEncodeData = dequeueFrame();
@@ -248,21 +234,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
     };
 
     private synchronized byte[] dequeueFrame() {
-        if (validSize() > 0 && frameBytes.size() > 0) {
-            byte[] tmp = frameBytes.get(frontIndex);
-            frontIndex++;
-            if (frontIndex == LIST_SIZE) {
-                frontIndex = 0;
-            }
-            notifyAll();
-            return tmp;
-        }
-        notifyAll();
-        return null;
-    }
-
-    private int validSize() {
-        return (lastIndex + LIST_SIZE - frontIndex) % LIST_SIZE;
+        return encodeDataQueue.poll();
     }
 
     public synchronized void addCallback(OnEncodeDataAvailable onEncodeDataAvailable) {

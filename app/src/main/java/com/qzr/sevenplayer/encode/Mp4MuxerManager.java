@@ -8,7 +8,8 @@ import android.util.Log;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -43,16 +44,13 @@ public class Mp4MuxerManager {
     private int writeVideoIndex = -1;
     private int writeAudioIndex = -1;
 
-    private int frontCount = 0;
-    private int tailCount = 0;
-    private int preLen = 0;
-    private ArrayList<MuxerBuffer> mMuxerBufferArrayList;
+    private Queue<MuxerBuffer> mixDataQueue;
 
     public static int SOURCE_AUDIO = 0;
     public static int SOURCE_VIDEO = 1;
 
     private Lock muxerWriteLock = new ReentrantLock();
-    private final Object byteFrameSync = new Object();
+    private final Object dataQueueSync = new Object();
 
     public class MuxerParam {
         public String fileName;
@@ -83,10 +81,7 @@ public class Mp4MuxerManager {
 
             mBufferInfo = new MediaCodec.BufferInfo();
 
-            frontCount = 0;
-            tailCount = 0;
-            preLen = mMp4Fps * 20;
-            mMuxerBufferArrayList = new ArrayList<>(preLen);
+            mixDataQueue = new ArrayBlockingQueue<>(100);
         } catch (Exception e) {
             Log.e(TAG, "buildMp4MuxerManager: error");
             e.printStackTrace();
@@ -116,8 +111,8 @@ public class Mp4MuxerManager {
         }
         muxerWriteLock.unlock();
 
-        synchronized (byteFrameSync) {
-            byteFrameSync.notify();
+        synchronized (dataQueueSync) {
+            dataQueueSync.notify();
         }
     }
 
@@ -166,13 +161,11 @@ public class Mp4MuxerManager {
             if ((byte) (output[4] & 0x1f) == 5) {
                 return true;
             }
-
         } else if ((output[0] == 0x0) && (0x0 == output[1]) && (output[2] == 0x01)) {
 
             if ((byte) (output[3] & 0x1f) == 5) {
                 return true;
             }
-
         }
         return false;
     }
@@ -183,31 +176,6 @@ public class Mp4MuxerManager {
 
     private long getAudioTimeStamp() {
         return System.currentTimeMillis() * 1000;
-    }
-
-    private int getCurrentSize() {
-        return (tailCount + preLen - frontCount) % preLen;
-    }
-
-    private void frontCountAdd() {
-        frontCount++;
-        if (frontCount == preLen) {
-            frontCount = 0;
-        }
-    }
-
-    private void frontCountMinus() {
-        frontCount--;
-        if (frontCount == -1) {
-            frontCount = preLen - 1;
-        }
-    }
-
-    private void tailCountAdd() {
-        tailCount++;
-        if (tailCount == preLen) {
-            tailCount = 0;
-        }
     }
 
     public void muxerMix2Data(byte[] data, int length, int source) {
@@ -231,18 +199,10 @@ public class Mp4MuxerManager {
             } else {
                 muxerBuffer.timeStamp = getAudioTimeStamp();
             }
-            synchronized (byteFrameSync) {
+            synchronized (dataQueueSync) {
                 Log.d(TAG, "muxerMix2Data: put data:" + (source == 1 ? "video" : "audio"));
-                if (mMuxerBufferArrayList.size() < preLen) {
-                    mMuxerBufferArrayList.add(tailCount, muxerBuffer);
-                } else {
-                    mMuxerBufferArrayList.set(tailCount, muxerBuffer);
-                }
-                tailCountAdd();
-                if (tailCount == frontCount) {
-                    frontCountAdd();
-                }
-                byteFrameSync.notify();
+                mixDataQueue.offer(muxerBuffer);
+                dataQueueSync.notify();
             }
         }
     }
@@ -260,19 +220,18 @@ public class Mp4MuxerManager {
             lastVideoTimestamp = 0;
             while (mMixing) {
                 MuxerBuffer muxerBuffer = null;
-                synchronized (byteFrameSync) {
-                    int size = getCurrentSize();
+                synchronized (dataQueueSync) {
+                    int size = mixDataQueue.size();
                     if (size <= 0) {
                         try {
                             //sleep 不会释放锁，wait会释放
-                            byteFrameSync.wait();
+                            dataQueueSync.wait();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
                         continue;
                     }
-                    muxerBuffer = mMuxerBufferArrayList.get(frontCount);
-                    frontCountAdd();
+                    muxerBuffer = mixDataQueue.poll();
                 }
 
                 if (muxerBuffer != null && mBufferInfo != null && muxerBuffer.length > 0) {
@@ -288,9 +247,7 @@ public class Mp4MuxerManager {
                         if (keyFlag) {
                             syncWriteBuffer(writeVideoIndex, inputBuffer, mBufferInfo);
                         } else {
-                            Log.e(TAG, "run: 1");
                             if (mBufferInfo.flags == MediaCodec.BUFFER_FLAG_KEY_FRAME) {
-                                Log.e(TAG, "run: 2");
                                 syncWriteBuffer(writeVideoIndex, inputBuffer, mBufferInfo);
                                 keyFlag = true;
                             }

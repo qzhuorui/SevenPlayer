@@ -109,16 +109,12 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         mCamera.setParameters(parameters);
 
         //fps
-        //        parameters.setPreviewFrameRate(cameraParams.fps);
-        //        mCamera.setParameters(parameters);
-        //
-        //抗锯齿
-        //        parameters.setAntibanding(Camera.Parameters.ANTIBANDING_50HZ);
-        //        mCamera.setParameters(parameters);
+        parameters.setPreviewFrameRate(cameraParams.fps);
+        mCamera.setParameters(parameters);
 
-        //低功耗
-        //        parameters.set("low-power-mode", "enable");
-        //        mCamera.setParameters(parameters);
+        //抗锯齿
+        parameters.setAntibanding(Camera.Parameters.ANTIBANDING_50HZ);
+        mCamera.setParameters(parameters);
 
         try {
             mCamera.setPreviewTexture(surfaceTexture);
@@ -221,12 +217,10 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
     }
 
     public void startOfferEncode() {
-        Log.i(TAG, "startOfferEncode: start task");
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(offerData2Encode);
     }
 
     public void stopOfferEncode() {
-        Log.i(TAG, "stopOfferEncode: remove task");
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().remove(offerData2Encode);
     }
 
@@ -239,14 +233,16 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                     if (tmp == null) {
                         try {
                             Thread.sleep(20);
-                            Log.d(TAG, "run: offerData2Encode data is null sleep");
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
                         continue;
                     }
                     Log.d(TAG, "run: offerData2Encode");
-                    VideoEncodeService.getInstance().handleYUVdata(tmp);
+                    VideoEncodeService.getInstance().handleNV21data(tmp);
+                } else {
+                    Log.d(TAG, "run: offerData2Encode break");
+                    break;
                 }
             }
         }
@@ -362,7 +358,6 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
         if (RecorderManager.getInstance().mEncodeStarted) {
-            Log.d(TAG, "onPreviewFrame: feedback yuv data");
             cameraBackDataQueue.enqueue(data, getOneYUVBufSize());
         }
         camera.addCallbackBuffer(cameraBuffer);

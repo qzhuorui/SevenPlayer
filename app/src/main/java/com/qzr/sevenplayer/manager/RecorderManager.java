@@ -61,7 +61,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     public class RecorderParam {
         public Date date = new Date();
         public String fileNamePrefix = StorageUtil.spFormat.get().format(date);
-        public String videoFilePath = StorageUtil.getOutPutVedioFile().getAbsolutePath();
+        public String videoFilePath = StorageUtil.getOutPutVideoFile().getAbsolutePath();
     }
 
     public RecorderManager buildRecorder() {

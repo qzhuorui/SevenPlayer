@@ -5,11 +5,13 @@ import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.util.Log;
 
+import com.qzr.sevenplayer.utils.CameraUtil;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
@@ -25,7 +27,9 @@ public class VideoEncodeService {
     private static final String TAG = "VideoEncodeService";
 
     private static final String MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC;
-
+    public final static byte ENCODE_STATUS_NEED_NONE = 0;
+    public final static byte ENCODE_STATUS_NEED_RECORD = 1;
+    private static final int TIMEOUT_S = 10000;
 
     private static VideoEncodeService instance;
 
@@ -35,21 +39,16 @@ public class VideoEncodeService {
     private CopyOnWriteArraySet<OnEncodeDataAvailable> bufferAvailableCallback;
 
     private byte mVideoEncodeUseState = 0;
-    public final static byte ENCODE_STATUS_NEED_NONE = 0;
-    public final static byte ENCODE_STATUS_NEED_RECORD = 1;
-    private static final int TIMEOUT_S = 10000;
 
     private boolean mEncoding = false;
     private boolean mTransmit = false;
 
     private byte[] sps = null;
     private byte[] pps = null;
-    private byte[] outputData;
 
-    int frontIndex = 0;
-    int lastIndex = 0;
-    private final int LIST_SIZE = 10;
-    private ArrayList<byte[]> frameBytes;
+    private Queue<byte[]> encodeDataQueue;
+    byte[] YUVDate;
+
 
     public synchronized static VideoEncodeService getInstance() {
         if (instance == null || instance.mMediaCodec == null) {
@@ -60,12 +59,10 @@ public class VideoEncodeService {
 
     public VideoEncodeService() {
         try {
-            frameBytes = new ArrayList<>(LIST_SIZE);
-
             mMediaCodec = MediaCodec.createEncoderByType(MIME_TYPE);
             mMediaFormat = MediaFormat.createVideoFormat(MIME_TYPE, 1920, 1080);
 
-            mMediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 8000);
+            mMediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 1920 * 1080 * 3 * 8 * 30 / 256);
             mMediaFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
             mMediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
             mMediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
@@ -75,6 +72,8 @@ public class VideoEncodeService {
 
             mMediaCodec.configure(mMediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 
+            YUVDate = new byte[1920 * 1080 * 3 / 2];
+            encodeDataQueue = new LinkedList<>();
             bufferAvailableCallback = new CopyOnWriteArraySet<>();
 
         } catch (Exception e) {
@@ -124,25 +123,25 @@ public class VideoEncodeService {
         Log.d(TAG, "releaseVideoEncode: ");
         mMediaCodec.release();
         mMediaCodec = null;
-        lastIndex = frontIndex = 0;
-        frameBytes.clear();
+        encodeDataQueue.clear();
         bufferAvailableCallback.clear();
         bufferAvailableCallback = null;
-        frameBytes = null;
+        encodeDataQueue = null;
         instance = null;
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().remove(transmitVideoDataTask);
     }
 
-    public void handleYUVdata(byte[] yuvData) {
-        if (yuvData != null) {
+    public void handleNV21data(byte[] nv21Data) {
+        if (nv21Data != null) {
+            CameraUtil.NV21toI420SemiPlanar(nv21Data, YUVDate, 1920, 1080);
             try {
                 int inputIndex = mMediaCodec.dequeueInputBuffer(0);
                 if (inputIndex >= 0) {
                     long pts = getPts();
                     ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
                     inputBuffer.clear();
-                    inputBuffer.put(yuvData);
-                    mMediaCodec.queueInputBuffer(inputIndex, 0, yuvData.length, pts, 0);
+                    inputBuffer.put(YUVDate);
+                    mMediaCodec.queueInputBuffer(inputIndex, 0, YUVDate.length, pts, 0);
                 }
 
                 MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
@@ -194,26 +193,7 @@ public class VideoEncodeService {
     private synchronized void enqueueFrame(byte[] outputData, int outBitSize) {
         byte[] tmp = new byte[outBitSize];
         System.arraycopy(outputData, 0, tmp, 0, outBitSize);
-        while (true) {
-            if ((lastIndex + 1) % LIST_SIZE == frontIndex) {
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            } else {
-                if (frameBytes.size() == LIST_SIZE) {
-                    frameBytes.set(lastIndex, tmp);
-                } else {
-                    frameBytes.add(tmp);
-                }
-                lastIndex++;
-                if (lastIndex == LIST_SIZE) {
-                    lastIndex = 0;
-                }
-                break;
-            }
-        }
+        encodeDataQueue.offer(tmp);
     }
 
     public void startTransmitVideoData() {
@@ -228,7 +208,7 @@ public class VideoEncodeService {
         @Override
         public void run() {
             while (true) {
-                if (frameBytes == null) {
+                if (encodeDataQueue == null) {
                     mTransmit = false;
                 } else {
                     Log.i(TAG, "run: transmitVideoDataTask dequeueFrame");
@@ -250,6 +230,7 @@ public class VideoEncodeService {
                         }
                     }
                 }
+
                 if (!mTransmit) {
                     if (bufferAvailableCallback != null && bufferAvailableCallback.size() > 0) {
                         for (OnEncodeDataAvailable onEncodeDataAvailable : bufferAvailableCallback) {
@@ -265,29 +246,15 @@ public class VideoEncodeService {
     };
 
     private synchronized byte[] dequeueFrame() {
-        if (validSize() > 0 && frameBytes.size() > 0) {
-            byte[] tmp = frameBytes.get(frontIndex);
-            frontIndex++;
-            if (frontIndex == LIST_SIZE) {
-                frontIndex = 0;
-            }
-            notifyAll();
-            return tmp;
-        }
-        notifyAll();
-        return null;
-    }
-
-    private int validSize() {
-        return (lastIndex + LIST_SIZE - frontIndex) % LIST_SIZE;
-    }
-
-    public synchronized byte getmVideoEncodeUseState() {
-        return mVideoEncodeUseState;
+        return encodeDataQueue.poll();
     }
 
     private long getPts() {
         return System.nanoTime() / 1000L;
+    }
+
+    public synchronized byte getmVideoEncodeUseState() {
+        return mVideoEncodeUseState;
     }
 
     public synchronized void addmVideoEncodeUseState(byte value) {
