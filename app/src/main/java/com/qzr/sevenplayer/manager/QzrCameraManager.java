@@ -1,5 +1,6 @@
 package com.qzr.sevenplayer.manager;
 
+import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
@@ -10,7 +11,10 @@ import android.util.Size;
 import android.widget.Toast;
 
 import com.qzr.sevenplayer.base.BaseApplication;
+import com.qzr.sevenplayer.encode.QueueArray;
+import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.CameraUtil;
+import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,14 +28,19 @@ import java.util.List;
  * @Author: qzhuorui
  * @CreateDate: 2020/7/4 10:30
  */
-public class QzrCameraManager implements Camera.ErrorCallback {
+public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCallback {
 
     private static final String TAG = "QzrCameraManager";
+
+    private static final int YUV_BUFFER_FRAME_SIZE = 2;
 
     private int previewErrorCnt = 0;
 
     private boolean cameraBuild = false;
     private boolean previewing = false;
+
+    private byte[] cameraBuffer;
+    private QueueArray cameraBackDataQueue;
 
     private Camera mCamera = null;
     private SurfaceTexture mSurfaceTexture;
@@ -83,10 +92,16 @@ public class QzrCameraManager implements Camera.ErrorCallback {
         parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
         mCamera.setParameters(parameters);
 
+        //camera preview颜色格式
+        parameters.setPreviewFormat(ImageFormat.NV21);
+
         //预览
         Camera.Size bestPreviewSize = CameraUtil.getOptimalSize(parameters.getSupportedPreviewSizes(), cameraParams.preViewWidth, cameraParams.preViewHeight);
         parameters.setPreviewSize(bestPreviewSize.width, bestPreviewSize.height);
         mCamera.setParameters(parameters);
+
+        cameraBuffer = new byte[bestPreviewSize.width * bestPreviewSize.height * 3 / 2];
+        cameraBackDataQueue = new QueueArray(bestPreviewSize.width * bestPreviewSize.height * 3 / 2 * YUV_BUFFER_FRAME_SIZE, TAG);
 
         //拍照
         Camera.Size bestPicSize = CameraUtil.getOptimalSize(parameters.getSupportedPictureSizes(), cameraParams.picWidth, cameraParams.picHeight);
@@ -200,12 +215,49 @@ public class QzrCameraManager implements Camera.ErrorCallback {
         releaseCamera();
     }
 
-    public void setPreViewCallBack(Camera.PreviewCallback preViewCallBack) {
-        mCamera.setPreviewCallback(preViewCallBack);
+    public void setPreViewCallBack() {
+        mCamera.addCallbackBuffer(cameraBuffer);
+        mCamera.setPreviewCallbackWithBuffer(this);
     }
+
+    public void startOfferEncode() {
+        Log.i(TAG, "startOfferEncode: start task");
+        ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(offerData2Encode);
+    }
+
+    public void stopOfferEncode() {
+        Log.i(TAG, "stopOfferEncode: remove task");
+        ThreadPoolProxyFactory.getNormalThreadPoolProxy().remove(offerData2Encode);
+    }
+
+    private Runnable offerData2Encode = new Runnable() {
+        @Override
+        public void run() {
+            while (true) {
+                if (previewing && RecorderManager.getInstance().mEncodeStarted && cameraBackDataQueue != null) {
+                    byte[] tmp = cameraBackDataQueue.dequeue(getOneYUVBufSize());
+                    if (tmp == null) {
+                        try {
+                            Thread.sleep(20);
+                            Log.d(TAG, "run: offerData2Encode data is null sleep");
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        continue;
+                    }
+                    Log.d(TAG, "run: offerData2Encode");
+                    VideoEncodeService.getInstance().handleYUVdata(tmp);
+                }
+            }
+        }
+    };
 
     public boolean isPreviewing() {
         return previewing;
+    }
+
+    private int getOneYUVBufSize() {
+        return mCamera.getParameters().getPreviewSize().width * mCamera.getParameters().getPreviewSize().height * 3 / 2;
     }
 
     public void takePicture(final TakePicDataCallBack dataCallBack, final int width, final int height) {
@@ -305,6 +357,15 @@ public class QzrCameraManager implements Camera.ErrorCallback {
                 break;
             default:
         }
+    }
+
+    @Override
+    public void onPreviewFrame(byte[] data, Camera camera) {
+        if (RecorderManager.getInstance().mEncodeStarted) {
+            Log.d(TAG, "onPreviewFrame: feedback yuv data");
+            cameraBackDataQueue.enqueue(data, getOneYUVBufSize());
+        }
+        camera.addCallbackBuffer(cameraBuffer);
     }
 
     public interface TakePicDataCallBack {

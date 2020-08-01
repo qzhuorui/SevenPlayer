@@ -129,7 +129,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
 
         MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
 
-        inputIndex = mMediaCodec.dequeueInputBuffer(-1);//从input缓冲区申请  buffer的编号  index
+        inputIndex = mMediaCodec.dequeueInputBuffer(0);//从input缓冲区申请  buffer的编号  index
         if (inputIndex < 0) {
             return;
         }

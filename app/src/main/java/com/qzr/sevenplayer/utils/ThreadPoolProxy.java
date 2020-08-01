@@ -44,7 +44,7 @@ public class ThreadPoolProxy {
                     TimeUnit timeUnit = TimeUnit.MILLISECONDS;
                     BlockingQueue<Runnable> workQueue = new LinkedBlockingDeque<>();
                     ThreadFactory threadFactory = new SimpleThreadFactory();
-                    RejectedExecutionHandler handler = new ThreadPoolExecutor.DiscardPolicy();
+                    RejectedExecutionHandler handler = new ThreadPoolExecutor.AbortPolicy();
 
                     mThreadPoolExecutor = new ThreadPoolExecutor(mCorePoolSize, mMaxmumPoolSize, keepAliveTime, timeUnit, workQueue, threadFactory, handler);
 

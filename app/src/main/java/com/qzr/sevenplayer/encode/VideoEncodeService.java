@@ -1,12 +1,10 @@
 package com.qzr.sevenplayer.encode;
 
-import android.hardware.Camera;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.util.Log;
 
-import com.qzr.sevenplayer.utils.CameraUtil;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.nio.ByteBuffer;
@@ -22,11 +20,12 @@ import java.util.concurrent.CopyOnWriteArraySet;
  * @Author: qzhuorui
  * @CreateDate: 2020/7/11 12:34
  */
-public class VideoEncodeService implements Camera.PreviewCallback {
+public class VideoEncodeService {
 
     private static final String TAG = "VideoEncodeService";
 
     private static final String MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC;
+
 
     private static VideoEncodeService instance;
 
@@ -46,14 +45,11 @@ public class VideoEncodeService implements Camera.PreviewCallback {
     private byte[] sps = null;
     private byte[] pps = null;
     private byte[] outputData;
-    private byte[] yuv420sp;
 
     int frontIndex = 0;
     int lastIndex = 0;
     private final int LIST_SIZE = 10;
     private ArrayList<byte[]> frameBytes;
-
-    private Runnable handleYUVTask;
 
     public synchronized static VideoEncodeService getInstance() {
         if (instance == null || instance.mMediaCodec == null) {
@@ -73,14 +69,12 @@ public class VideoEncodeService implements Camera.PreviewCallback {
             mMediaFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
             mMediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
             mMediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
-            //            mMediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, COLOR_FormatSurface);
             mMediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar);
             mMediaFormat.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh);
             mMediaFormat.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31);
 
             mMediaCodec.configure(mMediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 
-            yuv420sp = new byte[1920 * 1080 * 3 / 2];
             bufferAvailableCallback = new CopyOnWriteArraySet<>();
 
         } catch (Exception e) {
@@ -139,59 +133,61 @@ public class VideoEncodeService implements Camera.PreviewCallback {
         ThreadPoolProxyFactory.getNormalThreadPoolProxy().remove(transmitVideoDataTask);
     }
 
-    private void handleYUVdata(byte[] yuvData) {
-        if (yuvData == null) {
-            Log.d(TAG, "handleYUVdata: yuvData is null");
-            return;
-        }
+    public void handleYUVdata(byte[] yuvData) {
+        if (yuvData != null) {
+            try {
+                int inputIndex = mMediaCodec.dequeueInputBuffer(0);
+                if (inputIndex >= 0) {
+                    long pts = getPts();
+                    ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
+                    inputBuffer.clear();
+                    inputBuffer.put(yuvData);
+                    mMediaCodec.queueInputBuffer(inputIndex, 0, yuvData.length, pts, 0);
+                }
 
-        int outBitSize;
+                MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
+                int outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
 
-        MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
-        int inputIndex = mMediaCodec.dequeueInputBuffer(-1);
-        if (inputIndex < 0) {
-            Log.d(TAG, "handleYUVdata: inputIndex < 0");
-            return;
-        }
-        //        long pts = getPts();
-        ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
-        inputBuffer.clear();
-        inputBuffer.limit(yuvData.length);
-        inputBuffer.put(yuvData);
-        mMediaCodec.queueInputBuffer(inputIndex, 0, yuvData.length, 0, 0);
+                if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    MediaFormat format = mMediaCodec.getOutputFormat();
+                    ByteBuffer csdTmp = format.getByteBuffer("csd-0");
+                    sps = csdTmp.array();
+                    csdTmp = format.getByteBuffer("csd-1");
+                    pps = csdTmp.array();
 
-        int outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
-        if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-            MediaFormat format = mMediaCodec.getOutputFormat();
-            ByteBuffer csdTmp = format.getByteBuffer("csd-0");
-            sps = csdTmp.array();
-            csdTmp = format.getByteBuffer("csd-1");
-            pps = csdTmp.array();
-
-            if (bufferAvailableCallback != null && bufferAvailableCallback.size() > 0) {
-                for (OnEncodeDataAvailable onEncodeDataAvailable : bufferAvailableCallback) {
-                    if (onEncodeDataAvailable != null) {
-                        onEncodeDataAvailable.onCdsInfoUpdate(sps, pps, Mp4MuxerManager.SOURCE_VIDEO);
+                    if (bufferAvailableCallback != null && bufferAvailableCallback.size() > 0) {
+                        for (OnEncodeDataAvailable onEncodeDataAvailable : bufferAvailableCallback) {
+                            if (onEncodeDataAvailable != null) {
+                                onEncodeDataAvailable.onCdsInfoUpdate(sps, pps, Mp4MuxerManager.SOURCE_VIDEO);
+                            }
+                        }
                     }
                 }
+
+                while (outputIndex >= 0) {
+                    ByteBuffer outputBuffer = mMediaCodec.getOutputBuffer(outputIndex);
+
+                    if (encodeBufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
+                        encodeBufferInfo.size = 0;
+                    }
+
+                    if (encodeBufferInfo.size > 0) {
+                        byte[] outputData = new byte[encodeBufferInfo.size];
+                        outputBuffer.get(outputData);
+                        outputBuffer.position(encodeBufferInfo.offset);
+                        outputBuffer.limit(encodeBufferInfo.offset + encodeBufferInfo.size);
+                        enqueueFrame(outputData, encodeBufferInfo.size);
+                    }
+
+                    mMediaCodec.releaseOutputBuffer(outputIndex, false);
+                    encodeBufferInfo = new MediaCodec.BufferInfo();
+                    outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        }
-        while (outputIndex >= 0) {
-            outBitSize = encodeBufferInfo.size;
-            outputData = new byte[outBitSize];
-
-            ByteBuffer outputBuffer = mMediaCodec.getOutputBuffer(outputIndex);
-            outputBuffer.position(encodeBufferInfo.offset);
-            outputBuffer.limit(encodeBufferInfo.offset + outBitSize);
-            outputBuffer.get(outputData, 0, outBitSize);
-
-            if (outBitSize != 0 && encodeBufferInfo.flags != MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
-                enqueueFrame(outputData, outBitSize);
-            }
-
-            outputBuffer.position(encodeBufferInfo.offset);
-            mMediaCodec.releaseOutputBuffer(outputIndex, false);
-            outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+        } else {
+            Log.d(TAG, "handleYUVdata: YUVData is null");
         }
     }
 
@@ -220,10 +216,6 @@ public class VideoEncodeService implements Camera.PreviewCallback {
         }
     }
 
-    private long getPts() {
-        return System.nanoTime() / 1000L;
-    }
-
     public void startTransmitVideoData() {
         Log.d(TAG, "startTransmitVideoData: ");
         if (!mTransmit) {
@@ -239,6 +231,7 @@ public class VideoEncodeService implements Camera.PreviewCallback {
                 if (frameBytes == null) {
                     mTransmit = false;
                 } else {
+                    Log.i(TAG, "run: transmitVideoDataTask dequeueFrame");
                     byte[] tmpEncodeData = dequeueFrame();
                     if (tmpEncodeData == null && !mEncoding) {
                         mTransmit = false;
@@ -293,6 +286,10 @@ public class VideoEncodeService implements Camera.PreviewCallback {
         return mVideoEncodeUseState;
     }
 
+    private long getPts() {
+        return System.nanoTime() / 1000L;
+    }
+
     public synchronized void addmVideoEncodeUseState(byte value) {
         mVideoEncodeUseState = (byte) (mVideoEncodeUseState | value);
     }
@@ -314,18 +311,4 @@ public class VideoEncodeService implements Camera.PreviewCallback {
             bufferAvailableCallback.remove(onEncodeDataAvailable);
         }
     }
-
-    @Override
-    public void onPreviewFrame(byte[] data, Camera camera) {
-        if (!mEncoding) {
-            return;
-        }
-        // TODO: 2020/7/26 耗时操作 放入子线程
-        byte[] buffer = new byte[data.length];
-        System.arraycopy(data, 0, buffer, 0, data.length);
-        CameraUtil.NV21toI420SemiPlanar(buffer, yuv420sp, 1920, 1080);
-        Log.d(TAG, "onPreviewFrame: ");
-        handleYUVdata(buffer);
-    }
-
 }

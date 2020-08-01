@@ -15,7 +15,6 @@ import android.widget.Toast;
 import com.qzr.sevenplayer.R;
 import com.qzr.sevenplayer.base.BaseActivity;
 import com.qzr.sevenplayer.base.MessageWhat;
-import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.manager.QzrCameraManager;
 import com.qzr.sevenplayer.manager.RecorderManager;
 import com.qzr.sevenplayer.service.CameraSensor;
@@ -74,8 +73,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         QzrCameraManager.getInstance().buildCamera(surface).startPreView();
         //不设置camera callback，则onPreviewFrame不会进去
-        // TODO: 2020/7/25 后续需要再优化camera的预览，需要给camera设置callback，复用缓冲buffer
-        QzrCameraManager.getInstance().setPreViewCallBack(VideoEncodeService.getInstance());
+        QzrCameraManager.getInstance().setPreViewCallBack();
         mCameraSensor.startCameraSensor();
     }
 
@@ -138,7 +136,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_video: {
-                RecorderManager.getInstance().takePicture();
+                //                RecorderManager.getInstance().takePicture();
                 break;
             }
         }
@@ -159,6 +157,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
         switch (what) {
             case MessageWhat.STOP_RECORDER: {
                 Toast.makeText(mContext, "停止录像", Toast.LENGTH_SHORT).show();
+                QzrCameraManager.getInstance().stopOfferEncode();
                 RecorderManager.getInstance().stopRecord();
                 isRecording = false;
                 break;
@@ -167,6 +166,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
                 Toast.makeText(mContext, "开始录像", Toast.LENGTH_SHORT).show();
                 recorderManager = RecorderManager.getInstance().buildRecorder();
                 recorderManager.startRecord();
+                QzrCameraManager.getInstance().startOfferEncode();
                 isRecording = true;
                 break;
             }
