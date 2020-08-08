@@ -1,7 +1,6 @@
 package com.qzr.sevenplayer.base;
 
 import android.app.Application;
-import android.content.Context;
 
 import com.qzr.sevenplayer.utils.CrashHandler;
 
@@ -15,17 +14,17 @@ import com.qzr.sevenplayer.utils.CrashHandler;
  */
 public class BaseApplication extends Application {
 
-    private static Context mContext;
+    private static BaseApplication thisApp;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        mContext = getApplicationContext();
-        CrashHandler.getInstance().init(mContext);
+        thisApp = this;
+        CrashHandler.getInstance().init(this);
     }
 
-    public static Context getContext() {
-        return mContext;
+    public static BaseApplication getInstance() {
+        return thisApp;
     }
 
 }

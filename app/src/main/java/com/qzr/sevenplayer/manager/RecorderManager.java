@@ -8,10 +8,11 @@ import android.media.AudioManager;
 import android.util.Log;
 import android.widget.Toast;
 
-import com.qzr.sevenplayer.base.BaseApplication;
+import com.qzr.sevenplayer.base.Base;
 import com.qzr.sevenplayer.base.MessageWhat;
 import com.qzr.sevenplayer.encode.AudioEncodeService;
 import com.qzr.sevenplayer.encode.Mp4MuxerManager;
+import com.qzr.sevenplayer.encode.MuxerBean;
 import com.qzr.sevenplayer.encode.OnEncodeDataAvailable;
 import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.HandlerProcess;
@@ -125,32 +126,39 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         if (!checkMicPermission()) {
             return false;
         }
+
         if (!hasBuild) {
             throw new RuntimeException("recorder manager not build");
         }
 
         //start Video encoder
         if (!startVideoModule()) {
-            Log.d(TAG, "startRecord: startVideoModule is error");
+            Log.e(TAG, "startRecord: startVideoModule is error");
             releaseRecord();
             return false;
         }
 
         //start Audio encoder
         if (!startAudioModule()) {
-            Log.d(TAG, "startRecord: startAudioModule is error");
+            Log.e(TAG, "startRecord: startAudioModule is error");
             releaseVideoModule();
             releaseRecord();
             return false;
         }
 
+        //video，audio编码器已经全部开启
         mEncodeStarted = true;
 
-        //muxer mix to file
+        //start muxer ready to mix to file
         startRecordMix2File();
 
-        //feedback pcm data
+        //feedback nv21 data to encoder
+        startCameraRun();
+
+        //feedback pcm data to encoder
         startMicRun();
+
+        Toast.makeText(Base.CURRENT_APP, "开始录像", Toast.LENGTH_SHORT).show();
 
         return true;
     }
@@ -160,6 +168,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         if (mVideoEncodeService == null) {
             return false;
         }
+        Toast.makeText(Base.CURRENT_APP, "停止录像", Toast.LENGTH_SHORT).show();
 
         /**
          * Video。无其他地方使用，直接释放encoder
@@ -187,6 +196,8 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
 
         releaseRecord();
 
+        QzrCameraManager.getInstance().stopOfferEncode();
+
         QzrMicManager.getInstance().removePcmDataGetCallback(mAudioEncodeService);
         QzrMicManager.getInstance().stopMicManager();
 
@@ -206,7 +217,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
 
     private boolean startVideoModule() {
         if (mVideoEncodeService == null) {
-            Log.d(TAG, "startVideoModule: mVideoEncodeService is null");
+            Log.e(TAG, "startVideoModule: mVideoEncodeService is null");
             return false;
         }
         if (mVideoEncodeService.getmVideoEncodeUseState() == VideoEncodeService.ENCODE_STATUS_NEED_NONE) {
@@ -250,12 +261,12 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     }
 
     private void startMicRun() {
-        AudioManager am = (AudioManager) BaseApplication.getContext().getSystemService(Context.AUDIO_SERVICE);
+        AudioManager am = (AudioManager) Base.CURRENT_APP.getSystemService(Context.AUDIO_SERVICE);
         am.setMicrophoneMute(true);
         HandlerProcess.getInstance().postDelayedOnBg(new Runnable() {
             @Override
             public void run() {
-                AudioManager am = (AudioManager) BaseApplication.getContext().getSystemService(Context.AUDIO_SERVICE);
+                AudioManager am = (AudioManager) Base.CURRENT_APP.getSystemService(Context.AUDIO_SERVICE);
                 am.setMicrophoneMute(false);
             }
         }, 1500);
@@ -263,10 +274,14 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         QzrMicManager.getInstance().addPcmDataGetCallback(mAudioEncodeService);
     }
 
+    private void startCameraRun() {
+        QzrCameraManager.getInstance().startOfferEncode();
+    }
+
     private boolean checkMicPermission() {
-        boolean micPermission = PermissionHelper.hasPermission(BaseApplication.getContext(), Manifest.permission.RECORD_AUDIO);
+        boolean micPermission = PermissionHelper.hasPermission(Base.CURRENT_APP, Manifest.permission.RECORD_AUDIO);
         if (!micPermission) {
-            Toast.makeText(BaseApplication.getContext(), "无麦克风权限", Toast.LENGTH_SHORT).show();
+            Toast.makeText(Base.CURRENT_APP, "无麦克风权限", Toast.LENGTH_SHORT).show();
         }
         return micPermission;
     }
@@ -324,12 +339,11 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
      * @param source
      */
     @Override
-    public void onCdsInfoUpdate(byte[] csd0, byte[] csd1, int source) {
+    public synchronized void onCdsInfoUpdate(byte[] csd0, byte[] csd1, int source) {
         if (mMp4MuxerManager == null) {
             return;
         }
         if (source == Mp4MuxerManager.SOURCE_VIDEO) {
-            Log.d(TAG, "onCdsInfoUpdate: video");
             byte[] tmpSps = new byte[csd0.length];
             System.arraycopy(csd0, 0, tmpSps, 0, csd0.length);
 
@@ -340,7 +354,6 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
                 mMp4MuxerManager.buildSpsPpsParam(tmpSps, tmpPps);
             }
         } else {
-            Log.d(TAG, "onCdsInfoUpdate: audio");
             byte[] tmpAdts = new byte[csd0.length];
             System.arraycopy(csd0, 0, tmpAdts, 0, csd0.length);
             mMp4MuxerManager.buildAdtsParam(tmpAdts);
@@ -356,19 +369,16 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
     /**
      * 编解码相关回调
      *
-     * @param data
+     * @param muxerBean
      * @param source
      */
     @Override
-    public void onEncodeBufferAvailable(byte[] data, int source) {
-        Log.d(TAG, "onEncodeBufferAvailable: " + (source == 1 ? "video" : "audio") + " data: " + (data != null));
+    public synchronized void onEncodeBufferAvailable(MuxerBean muxerBean, int source) {
         if (mCurTrackCount <= 0) {
             stopRecordMix2File();
         }
-        if (mMp4MuxerManager != null && mEncodeStarted && data != null) {
-            byte[] tmpData = new byte[data.length];
-            System.arraycopy(data, 0, tmpData, 0, data.length);
-            mMp4MuxerManager.muxerMix2Data(tmpData, tmpData.length, source);
+        if (mMp4MuxerManager != null && mEncodeStarted && muxerBean != null) {
+            mMp4MuxerManager.muxerMix2Data(muxerBean, source);
         }
     }
 

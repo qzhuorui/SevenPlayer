@@ -10,7 +10,6 @@ import android.view.MotionEvent;
 import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
-import android.widget.Toast;
 
 import com.qzr.sevenplayer.R;
 import com.qzr.sevenplayer.base.BaseActivity;
@@ -65,6 +64,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
         mCameraSensor.setCameraSensorListener(this);
 
         textureView.setOnTouchListener(this);
+
         btnVideo.setOnClickListener(this);
         btnVideo.setOnLongClickListener(this);
     }
@@ -136,7 +136,7 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_video: {
-                //                RecorderManager.getInstance().takePicture();
+                RecorderManager.getInstance().takePicture();
                 break;
             }
         }
@@ -149,24 +149,20 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
         } else {
             HandlerProcess.getInstance().post(MessageWhat.START_RECORDER, 0, this);
         }
-        return false;
+        return true;
     }
 
     @Override
     public void handleMsg(int what, Object o) {
         switch (what) {
             case MessageWhat.STOP_RECORDER: {
-                Toast.makeText(mContext, "停止录像", Toast.LENGTH_SHORT).show();
-                QzrCameraManager.getInstance().stopOfferEncode();
                 RecorderManager.getInstance().stopRecord();
                 isRecording = false;
                 break;
             }
             case MessageWhat.START_RECORDER: {
-                Toast.makeText(mContext, "开始录像", Toast.LENGTH_SHORT).show();
                 recorderManager = RecorderManager.getInstance().buildRecorder();
                 recorderManager.startRecord();
-                QzrCameraManager.getInstance().startOfferEncode();
                 isRecording = true;
                 break;
             }

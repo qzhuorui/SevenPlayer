@@ -30,12 +30,13 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
     private static AudioEncodeService instance;
 
     private static final String MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC;
+    private static final int TIMEOUT_S = 10000;
 
     private MediaCodec mMediaCodec;
     private MediaFormat mMediaFormat;
 
     private byte[] csd0 = null;
-    private Queue<byte[]> encodeDataQueue;
+    private Queue<MuxerBean> encodeDataQueue;
 
     private ArrayList<OnEncodeDataAvailable> bufferAvailableCallback;
 
@@ -68,14 +69,14 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
             bufferAvailableCallback = new ArrayList<>(2);
 
         } catch (Exception e) {
-            Log.d(TAG, "AudioEncodeService: audio encoder config error");
+            Log.e(TAG, "AudioEncodeService: audio encoder config error");
             e.printStackTrace();
         }
     }
 
     public boolean startAudioEncode() {
         if (mEncoding) {
-            Log.d(TAG, "startAudioEncode: is encoding!");
+            Log.e(TAG, "startAudioEncode: is encoding!");
             return true;
         }
         try {
@@ -122,7 +123,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
     private void handlePCMdata(byte[] pcmBuffer) {
         if (pcmBuffer != null) {
             try {
-                int inputIndex = mMediaCodec.dequeueInputBuffer(0);//从input缓冲区申请  buffer的编号  index
+                int inputIndex = mMediaCodec.dequeueInputBuffer(TIMEOUT_S);//从input缓冲区申请  buffer的编号  index
                 if (inputIndex >= 0) {
                     long pts = getPts();
                     ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
@@ -133,7 +134,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
                 }
 
                 MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
-                int outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);//申请处理完后的输出buffer
+                int outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, TIMEOUT_S);//申请处理完后的输出buffer
 
                 if (outPutIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat mediaFormat = mMediaCodec.getOutputFormat();
@@ -161,33 +162,36 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
                         outputBuffer.get(outputData);//将编码得到的aac数据，取出到byte[]中
                         outputBuffer.position(encodeBufferInfo.offset);
                         outputBuffer.limit(encodeBufferInfo.offset + encodeBufferInfo.size);
-                        enqueueFrame(outputData, encodeBufferInfo.size);
+                        encodeBufferInfo.presentationTimeUs = getPts();
+                        enqueueFrame(new MuxerBean(outputData, encodeBufferInfo, false));
                     }
 
                     mMediaCodec.releaseOutputBuffer(outPutIndex, false);
                     encodeBufferInfo = new MediaCodec.BufferInfo();
-                    outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+                    outPutIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, TIMEOUT_S);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
         } else {
-            Log.d(TAG, "handlePCMdata: PCMData is null");
+            Log.e(TAG, "handlePCMdata: PCMData is null");
         }
     }
 
-    private synchronized void enqueueFrame(byte[] buffer, int pos) {
-        byte[] tmp = new byte[pos];
-        System.arraycopy(buffer, 0, tmp, 0, pos);
-        encodeDataQueue.offer(tmp);
+    private synchronized void enqueueFrame(MuxerBean muxerBean) {
+        encodeDataQueue.offer(muxerBean);
     }
 
     private long getPts() {
         return System.nanoTime() / 1000L;
     }
 
+    private long getAudioTimeStamp() {
+        return System.currentTimeMillis() * 1000;
+    }
+
     public void startTransmitAudioData() {
-        Log.d(TAG, "startTransmitAudioData: ");
+        Log.i(TAG, "startTransmitAudioData: ");
         if (!mTransmit) {
             mTransmit = true;
             ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(transmitAudioDataTask);
@@ -201,7 +205,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
                 if (encodeDataQueue == null) {
                     mTransmit = false;
                 } else {
-                    byte[] tmpEncodeData = dequeueFrame();
+                    MuxerBean tmpEncodeData = dequeueFrame();
                     if (tmpEncodeData == null && !mEncoding) {
                         mTransmit = false;
                     }
@@ -233,7 +237,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
         }
     };
 
-    private synchronized byte[] dequeueFrame() {
+    private synchronized MuxerBean dequeueFrame() {
         return encodeDataQueue.poll();
     }
 

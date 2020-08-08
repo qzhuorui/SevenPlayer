@@ -10,7 +10,7 @@ import android.util.Log;
 import android.util.Size;
 import android.widget.Toast;
 
-import com.qzr.sevenplayer.base.BaseApplication;
+import com.qzr.sevenplayer.base.Base;
 import com.qzr.sevenplayer.encode.QueueArray;
 import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.CameraUtil;
@@ -241,7 +241,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                     Log.d(TAG, "run: offerData2Encode");
                     VideoEncodeService.getInstance().handleNV21data(tmp);
                 } else {
-                    Log.d(TAG, "run: offerData2Encode break");
+                    Log.e(TAG, "run: offerData2Encode break");
                     break;
                 }
             }
@@ -268,7 +268,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                 mCamera.takePicture(null, new Camera.PictureCallback() {
                     @Override
                     public void onPictureTaken(byte[] data, Camera camera) {
-                        Toast.makeText(BaseApplication.getContext(), "拍照成功", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(Base.CURRENT_APP, "拍照成功", Toast.LENGTH_SHORT).show();
                     }
                 }, new Camera.PictureCallback() {
                     @Override
@@ -280,14 +280,14 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                 });
             } catch (Exception e) {
                 e.printStackTrace();
-                Toast.makeText(BaseApplication.getContext(), "拍照失败", Toast.LENGTH_SHORT).show();
+                Toast.makeText(Base.CURRENT_APP, "拍照失败", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
     public boolean activeCameraFocus(Point focusPoint, Size screenSize, Camera.AutoFocusCallback focusCallback) {
         if (mCamera == null) {
-            Log.d(TAG, "activeCameraFocus: camera is null");
+            Log.e(TAG, "activeCameraFocus: camera is null");
         }
         Point cameraFocusPoint = CameraUtil.convertToCameraPoint(screenSize, focusPoint);
         Rect cameraFocusRect = CameraUtil.convertToCameraRect(cameraFocusPoint, 100);
@@ -308,7 +308,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
             try {
                 mCamera.setParameters(parameters);
             } catch (Exception e) {
-                Log.d(TAG, "activeCameraFocus: error");
+                Log.e(TAG, "activeCameraFocus: error");
                 e.printStackTrace();
                 return false;
             }

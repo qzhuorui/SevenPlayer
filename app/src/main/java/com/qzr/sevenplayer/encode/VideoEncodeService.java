@@ -46,7 +46,7 @@ public class VideoEncodeService {
     private byte[] sps = null;
     private byte[] pps = null;
 
-    private Queue<byte[]> encodeDataQueue;
+    private Queue<MuxerBean> encodeDataQueue;
     byte[] YUVDate;
 
 
@@ -84,7 +84,7 @@ public class VideoEncodeService {
 
     public boolean startVideoEncode() {
         if (mEncoding) {
-            Log.d(TAG, "startVideoEncode: is encoding!");
+            Log.e(TAG, "startVideoEncode: is encoding!");
             return true;
         }
         try {
@@ -120,7 +120,7 @@ public class VideoEncodeService {
     }
 
     public synchronized void releaseVideoEncode() {
-        Log.d(TAG, "releaseVideoEncode: ");
+        Log.i(TAG, "releaseVideoEncode: ");
         mMediaCodec.release();
         mMediaCodec = null;
         encodeDataQueue.clear();
@@ -135,7 +135,7 @@ public class VideoEncodeService {
         if (nv21Data != null) {
             CameraUtil.NV21toI420SemiPlanar(nv21Data, YUVDate, 1920, 1080);
             try {
-                int inputIndex = mMediaCodec.dequeueInputBuffer(0);
+                int inputIndex = mMediaCodec.dequeueInputBuffer(TIMEOUT_S);
                 if (inputIndex >= 0) {
                     long pts = getPts();
                     ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
@@ -145,7 +145,7 @@ public class VideoEncodeService {
                 }
 
                 MediaCodec.BufferInfo encodeBufferInfo = new MediaCodec.BufferInfo();
-                int outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+                int outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, TIMEOUT_S);
 
                 if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat format = mMediaCodec.getOutputFormat();
@@ -175,29 +175,28 @@ public class VideoEncodeService {
                         outputBuffer.get(outputData);
                         outputBuffer.position(encodeBufferInfo.offset);
                         outputBuffer.limit(encodeBufferInfo.offset + encodeBufferInfo.size);
-                        enqueueFrame(outputData, encodeBufferInfo.size);
+                        encodeBufferInfo.presentationTimeUs = getPts();
+                        enqueueFrame(new MuxerBean(outputData, encodeBufferInfo, true));
                     }
 
                     mMediaCodec.releaseOutputBuffer(outputIndex, false);
                     encodeBufferInfo = new MediaCodec.BufferInfo();
-                    outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, 0);
+                    outputIndex = mMediaCodec.dequeueOutputBuffer(encodeBufferInfo, TIMEOUT_S);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
         } else {
-            Log.d(TAG, "handleYUVdata: YUVData is null");
+            Log.e(TAG, "handleYUVdata: YUVData is null");
         }
     }
 
-    private synchronized void enqueueFrame(byte[] outputData, int outBitSize) {
-        byte[] tmp = new byte[outBitSize];
-        System.arraycopy(outputData, 0, tmp, 0, outBitSize);
-        encodeDataQueue.offer(tmp);
+    private synchronized void enqueueFrame(MuxerBean muxerBean) {
+        encodeDataQueue.offer(muxerBean);
     }
 
     public void startTransmitVideoData() {
-        Log.d(TAG, "startTransmitVideoData: ");
+        Log.i(TAG, "startTransmitVideoData: ");
         if (!mTransmit) {
             mTransmit = true;
             ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(transmitVideoDataTask);
@@ -212,7 +211,7 @@ public class VideoEncodeService {
                     mTransmit = false;
                 } else {
                     Log.i(TAG, "run: transmitVideoDataTask dequeueFrame");
-                    byte[] tmpEncodeData = dequeueFrame();
+                    MuxerBean tmpEncodeData = dequeueFrame();
                     if (tmpEncodeData == null && !mEncoding) {
                         mTransmit = false;
                     }
@@ -245,12 +244,16 @@ public class VideoEncodeService {
         }
     };
 
-    private synchronized byte[] dequeueFrame() {
+    private synchronized MuxerBean dequeueFrame() {
         return encodeDataQueue.poll();
     }
 
     private long getPts() {
         return System.nanoTime() / 1000L;
+    }
+
+    private long getVideoTimeStamp() {
+        return System.currentTimeMillis() * 1000;
     }
 
     public synchronized byte getmVideoEncodeUseState() {

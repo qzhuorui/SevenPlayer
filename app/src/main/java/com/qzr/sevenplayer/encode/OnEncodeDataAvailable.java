@@ -10,7 +10,7 @@ package com.qzr.sevenplayer.encode;
  */
 public interface OnEncodeDataAvailable {
 
-    public void onCdsInfoUpdate(byte[] csd0,byte[] csd1,int source);
+    public void onCdsInfoUpdate(byte[] csd0, byte[] csd1, int source);
 
-    public void onEncodeBufferAvailable(byte[] data,int source);
+    public void onEncodeBufferAvailable(MuxerBean muxerBean, int source);
 }

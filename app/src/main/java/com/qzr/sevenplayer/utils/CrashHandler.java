@@ -83,7 +83,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
 
             String fileName = "CRS_" + time + ".txt";
 
-            File cacheDir = new File(StorageUtil.getOutPutLogFile() + "log");
+            File cacheDir = new File(StorageUtil.getOutPutLogFile().getPath());
             if (!cacheDir.exists()) {
                 if (!cacheDir.mkdirs()) {
                     return null;
