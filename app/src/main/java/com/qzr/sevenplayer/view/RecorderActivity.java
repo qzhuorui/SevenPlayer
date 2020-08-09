@@ -136,7 +136,11 @@ public class RecorderActivity extends BaseActivity implements TextureView.Surfac
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_video: {
-                RecorderManager.getInstance().takePicture();
+                if (isRecording) {
+                    QzrCameraManager.getInstance().setTakePic(true);
+                } else {
+                    RecorderManager.getInstance().takePicture();
+                }
                 break;
             }
         }

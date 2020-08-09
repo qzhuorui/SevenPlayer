@@ -11,9 +11,11 @@ import android.util.Size;
 import android.widget.Toast;
 
 import com.qzr.sevenplayer.base.Base;
+import com.qzr.sevenplayer.base.MessageWhat;
 import com.qzr.sevenplayer.encode.QueueArray;
 import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.CameraUtil;
+import com.qzr.sevenplayer.utils.HandlerProcess;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.io.IOException;
@@ -38,6 +40,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
 
     private boolean cameraBuild = false;
     private boolean previewing = false;
+    private boolean isTakePic = false;
 
     private byte[] cameraBuffer;
     private QueueArray cameraBackDataQueue;
@@ -252,6 +255,14 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         return previewing;
     }
 
+    public void setTakePic(boolean takePic) {
+        isTakePic = takePic;
+    }
+
+    public boolean isTakePic() {
+        return isTakePic;
+    }
+
     private int getOneYUVBufSize() {
         return mCamera.getParameters().getPreviewSize().width * mCamera.getParameters().getPreviewSize().height * 3 / 2;
     }
@@ -264,7 +275,12 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                 // TODO: 2020/7/11 超分辨率，需要插值法
                 parameters.setPictureSize(width, height);
                 mCamera.setParameters(parameters);
-
+                /**
+                 *  onPreviewFrame不会再回调，因为
+                 *  Preview will be stopped after the image is
+                 *  taken; callers must call {@link #startPreview()} again if they want to
+                 *  re-start preview or take more pictures
+                 */
                 mCamera.takePicture(null, new Camera.PictureCallback() {
                     @Override
                     public void onPictureTaken(byte[] data, Camera camera) {
@@ -273,6 +289,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
                 }, new Camera.PictureCallback() {
                     @Override
                     public void onPictureTaken(byte[] data, Camera camera) {
+                        //on main thread
                         if (data != null) {
                             dataCallBack.takePicOnCall(data, width, height);
                         }
@@ -359,6 +376,10 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
     public void onPreviewFrame(byte[] data, Camera camera) {
         if (RecorderManager.getInstance().mEncodeStarted) {
             cameraBackDataQueue.enqueue(data, getOneYUVBufSize());
+        }
+        if (isTakePic) {
+            HandlerProcess.getInstance().postBG(MessageWhat.TAKE_PIC_OVER, data, 0, RecorderManager.getInstance());
+            Toast.makeText(Base.CURRENT_APP, "拍照成功", Toast.LENGTH_SHORT).show();
         }
         camera.addCallbackBuffer(cameraBuffer);
     }

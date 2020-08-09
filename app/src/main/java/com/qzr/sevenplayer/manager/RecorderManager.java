@@ -4,6 +4,9 @@ import android.Manifest;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.media.AudioManager;
 import android.util.Log;
 import android.widget.Toast;
@@ -18,7 +21,6 @@ import com.qzr.sevenplayer.encode.VideoEncodeService;
 import com.qzr.sevenplayer.utils.HandlerProcess;
 import com.qzr.sevenplayer.utils.PermissionHelper;
 import com.qzr.sevenplayer.utils.StorageUtil;
-import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -114,6 +116,19 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         try {
             FileOutputStream fileOutputStream = new FileOutputStream(picture.getPath());
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fileOutputStream);
+            fileOutputStream.flush();
+            fileOutputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveNV21Picture(byte[] picData) {
+        File picture = StorageUtil.getOutPutImageFile();
+        try {
+            FileOutputStream fileOutputStream = new FileOutputStream(picture.getPath());
+            YuvImage yuvImage = new YuvImage(picData, ImageFormat.NV21, 1920, 1080, null);
+            yuvImage.compressToJpeg(new Rect(0, 0, 1920, 1080), 70, fileOutputStream);
             fileOutputStream.flush();
             fileOutputStream.close();
         } catch (Exception e) {
@@ -307,6 +322,18 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
                 QzrCameraManager.getInstance().takePicture(this, 1920, 1080);
                 break;
             }
+            case MessageWhat.TAKE_PIC_OVER: {
+                byte[] picData = (byte[]) o;
+                if (QzrCameraManager.getInstance().isTakePic()) {
+                    saveNV21Picture(picData);
+                    QzrCameraManager.getInstance().setTakePic(false);
+                } else {
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(picData, 0, picData.length);
+                    savePicture(bitmap);
+                    bitmap.recycle();
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -321,14 +348,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
      */
     @Override
     public void takePicOnCall(final byte[] data, int dwidth, int dheight) {
-        ThreadPoolProxyFactory.getNormalThreadPoolProxy().execute(new Runnable() {
-            @Override
-            public void run() {
-                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-                savePicture(bitmap);
-                bitmap.recycle();
-            }
-        });
+        HandlerProcess.getInstance().postBG(MessageWhat.TAKE_PIC_OVER, data, 0, this);
     }
 
     /**
