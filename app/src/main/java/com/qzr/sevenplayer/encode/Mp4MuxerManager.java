@@ -8,8 +8,8 @@ import android.util.Log;
 import com.qzr.sevenplayer.utils.ThreadPoolProxyFactory;
 
 import java.nio.ByteBuffer;
-import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -26,12 +26,9 @@ public class Mp4MuxerManager {
     private static final String TAG = "Mp4MuxerManager";
 
     private String mFilePath;
-    private int mMp4Fps;
 
     private boolean mStarted = false;
     private boolean mMixing = false;
-
-    private MuxerParam mMuxerParam;
 
     private MediaMuxer mMediaMuxer;
     private MediaFormat mVideoFormat;
@@ -43,13 +40,13 @@ public class Mp4MuxerManager {
     private int writeVideoIndex = -1;
     private int writeAudioIndex = -1;
 
-    private Queue<MuxerBean> mixDataQueue;
+    //阻塞队列，ArrayBlockingQueue
+    private BlockingQueue<MuxerBean> mixDataQueue;
 
     public static int SOURCE_AUDIO = 0;
     public static int SOURCE_VIDEO = 1;
 
     private Lock muxerWriteLock = new ReentrantLock();
-    private final Object dataQueueSync = new Object();
 
     public class MuxerParam {
         public String fileName;
@@ -59,19 +56,8 @@ public class Mp4MuxerManager {
         public int fps;
     }
 
-    public class MuxerBuffer {
-        byte[] data;
-        int length;
-        int source;
-        int flags;
-        long timeStamp;
-    }
-
     public Mp4MuxerManager buildMp4MuxerManager(MuxerParam muxerParam) {
-        mMuxerParam = muxerParam;
         mFilePath = muxerParam.fileAbsolutePath;
-        mMp4Fps = muxerParam.fps;
-
         try {
             mMediaMuxer = new MediaMuxer(mFilePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
@@ -107,10 +93,6 @@ public class Mp4MuxerManager {
             mMixing = false;
         }
         muxerWriteLock.unlock();
-
-        synchronized (dataQueueSync) {
-            dataQueueSync.notify();
-        }
     }
 
     public synchronized void releaseMp4MuxerManager() {
@@ -170,26 +152,16 @@ public class Mp4MuxerManager {
         return (bufferInfo.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
     }
 
-    private long getVideoTimeStamp() {
-        return System.currentTimeMillis() * 1000;
-    }
-
-    private long getAudioTimeStamp() {
-        return System.currentTimeMillis() * 1000;
-    }
-
-    private long getPts() {
-        return System.nanoTime() / 1000L;
-    }
-
-    public void muxerMix2Data(MuxerBean muxerBean, int source) {
+    public void muxerMix2Data(MuxerBean muxerBean) {
         if (!mStarted) {
             return;
         }
         if (mMediaMuxer != null) {
-            synchronized (dataQueueSync) {
-                mixDataQueue.offer(muxerBean);
-                dataQueueSync.notify();
+            try {
+                mixDataQueue.put(muxerBean);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Log.e(TAG, "muxerMix2Data: error");
             }
         }
     }
@@ -204,28 +176,20 @@ public class Mp4MuxerManager {
         public void run() {
             lastAudioTimestamp = 0;
             lastVideoTimestamp = 0;
+            MuxerBean muxerBean = null;
             while (mMixing) {
-                MuxerBean muxerBean = null;
-                synchronized (dataQueueSync) {
-                    int size = mixDataQueue.size();
-                    if (size <= 0) {
-                        try {
-                            //sleep 不会释放锁，wait会释放
-                            dataQueueSync.wait();
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
+                try {
+                    muxerBean = mixDataQueue.take();
+                    if (muxerBean != null) {
+                        if (muxerBean.isVideo()) {
+                            syncWriteBuffer(writeVideoIndex, muxerBean.getByteBuffer(), muxerBean.getBufferInfo());
+                        } else {
+                            syncWriteBuffer(writeAudioIndex, muxerBean.getByteBuffer(), muxerBean.getBufferInfo());
                         }
-                        continue;
                     }
-                    muxerBean = mixDataQueue.poll();
-                }
-
-                if (muxerBean != null) {
-                    if (muxerBean.isVideo()) {
-                        syncWriteBuffer(writeVideoIndex, muxerBean.getByteBuffer(), muxerBean.getBufferInfo());
-                    } else {
-                        syncWriteBuffer(writeAudioIndex, muxerBean.getByteBuffer(), muxerBean.getBufferInfo());
-                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    Log.e(TAG, "run: write2FileTask, error");
                 }
             }
         }

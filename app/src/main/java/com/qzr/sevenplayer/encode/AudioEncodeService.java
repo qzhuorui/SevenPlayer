@@ -186,10 +186,6 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
         return System.nanoTime() / 1000L;
     }
 
-    private long getAudioTimeStamp() {
-        return System.currentTimeMillis() * 1000;
-    }
-
     public void startTransmitAudioData() {
         Log.i(TAG, "startTransmitAudioData: ");
         if (!mTransmit) {

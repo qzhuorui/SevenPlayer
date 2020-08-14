@@ -120,6 +120,10 @@ public class QzrMicManager {
         mMicStarted = false;
     }
 
+    /**
+     * 同时两个Thread并行的生产者和消费者模式，没有数据的时候sleep等待一下，sleep阻塞当前线程。
+     */
+
     private Runnable enqueuePcmTask = new Runnable() {
         @Override
         public void run() {

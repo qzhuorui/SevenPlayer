@@ -252,10 +252,6 @@ public class VideoEncodeService {
         return System.nanoTime() / 1000L;
     }
 
-    private long getVideoTimeStamp() {
-        return System.currentTimeMillis() * 1000;
-    }
-
     public synchronized byte getmVideoEncodeUseState() {
         return mVideoEncodeUseState;
     }

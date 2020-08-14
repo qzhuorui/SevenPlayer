@@ -398,7 +398,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
             stopRecordMix2File();
         }
         if (mMp4MuxerManager != null && mEncodeStarted && muxerBean != null) {
-            mMp4MuxerManager.muxerMix2Data(muxerBean, source);
+            mMp4MuxerManager.muxerMix2Data(muxerBean);
         }
     }
 
