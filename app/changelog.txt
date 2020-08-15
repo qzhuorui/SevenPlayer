@@ -60,3 +60,14 @@
 1.在使用textureview进行预览，调用camera.takePic时。preview will stopped after the img is taken, must call startPreview again if want to take pic or re-start preview
 
 ————————————————————————————————————————————————————————————————————————
+
+2020年8月14日17:40:41
+# 当前进度：
+1.使用Muxer混合音视频数据时，消费者生产者模式改为使用BlockingQueue，这样可以不使用wait/notify，同时也不用加Object锁，更简洁方便。
+
+# 待处理问题：
+1.明天将处理解码播放，显示图片的功能。
+
+# 上次问题解决方案：
+
+————————————————————————————————————————————————————————————————————————
