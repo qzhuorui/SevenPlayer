@@ -1,6 +1,7 @@
 package com.qzr.sevenplayer.base;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
@@ -29,6 +30,7 @@ public abstract class BaseActivity extends AppCompatActivity {
 
     public abstract void initView();
 
+    @SuppressLint("SourceLockedOrientationActivity")
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
