@@ -31,18 +31,25 @@ public class DecorderManager {
     }
 
     public void buildMediaDecode(String filePath, Surface surface) {
+        mAudioDecodeService = AudioDecodeService.getInstance().buildAudioDecorderWithParam(filePath);
         mVideoDecodeService = VideoDecodeService.getInstance().buildVideoDecorderWithParam(filePath, surface);
+        mAudioDecodeService.startAudioDecode();
         mVideoDecodeService.startVideoDecode();
     }
 
     public void startMediaDecode() {
+        mAudioDecodeService.startTransmit2AudioTrack();
         mVideoDecodeService.startTransmit2Surface();
     }
 
     public void stopMediaDecode() {
         mVideoDecodeService.stopVideoDecoding();
+        mAudioDecodeService.stopAudioDecoding();
         mVideoDecodeService.stopVideoDecode();
+        mAudioDecodeService.stopAudioDecode();
         mVideoDecodeService.releaseVideoDecode();
+        mAudioDecodeService.releaseAudioDecode();
         mVideoDecodeService = null;
+        mAudioDecodeService =null;
     }
 }

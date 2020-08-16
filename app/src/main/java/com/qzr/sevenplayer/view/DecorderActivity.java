@@ -3,7 +3,8 @@ package com.qzr.sevenplayer.view;
 import android.graphics.SurfaceTexture;
 import android.view.Surface;
 import android.view.TextureView;
-import android.widget.TextView;
+import android.view.Window;
+import android.view.WindowManager;
 
 import com.qzr.sevenplayer.R;
 import com.qzr.sevenplayer.base.BaseActivity;
@@ -15,8 +16,6 @@ public class DecorderActivity extends BaseActivity implements TextureView.Surfac
 
     private static final String TAG = "DecorderActivity";
 
-    @BindView(R.id.tv_fileName)
-    TextView fileName;
     @BindView(R.id.txv_fileWindow)
     TextureView fileWindow;
 
@@ -26,7 +25,8 @@ public class DecorderActivity extends BaseActivity implements TextureView.Surfac
 
     @Override
     public void beforeSetContentView() {
-
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
     }
 
     @Override
@@ -38,13 +38,14 @@ public class DecorderActivity extends BaseActivity implements TextureView.Surfac
     public void initView() {
         initData();
         fileWindow.setRotation(90);
+        fileWindow.setScaleX((float) 1920 / 1080);
+        fileWindow.setScaleY((float) 1080 / 1920);
         fileWindow.setSurfaceTextureListener(this);
         decorderManager = DecorderManager.getInstance();
     }
 
     private void initData() {
         filePathStr = getIntent().getExtras().getString("filePath");
-        fileName.setText(filePathStr);
     }
 
     @Override

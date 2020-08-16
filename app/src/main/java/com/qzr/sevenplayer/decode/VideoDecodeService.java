@@ -26,13 +26,13 @@ public class VideoDecodeService {
     private MediaExtractor mMediaExtractor;
     private MediaCodec mMediaCodec;
     private MediaFormat mMediaFormat;
-    MediaCodec.BufferInfo mBufferInfo;
+    private int mFrameRate;
 
     private boolean mDecoding = false;
     private boolean mTransmit = false;
 
     public static VideoDecodeService getInstance() {
-        return VideoDecodeService.VideoDecodeServiceHolder.videoDecodeService;
+        return VideoDecodeServiceHolder.videoDecodeService;
     }
 
     private static class VideoDecodeServiceHolder {
@@ -44,7 +44,6 @@ public class VideoDecodeService {
 
     public synchronized VideoDecodeService buildVideoDecorderWithParam(String filePath, Surface surface) {
         try {
-            mBufferInfo = new MediaCodec.BufferInfo();
             mMediaExtractor = new MediaExtractor();
             mMediaExtractor.setDataSource(filePath);
             int videoTrack = selectMediaTrack(mMediaExtractor);
@@ -65,7 +64,9 @@ public class VideoDecodeService {
     private int selectMediaTrack(MediaExtractor mMediaExtractor) {
         String mimeType;
         for (int i = 0; i < mMediaExtractor.getTrackCount(); i++) {
+            //获取文件对应track的信息
             mMediaFormat = mMediaExtractor.getTrackFormat(i);
+            mFrameRate = mMediaFormat.getInteger(MediaFormat.KEY_FRAME_RATE);
             mimeType = mMediaFormat.getString(MediaFormat.KEY_MIME);
             if (mimeType.startsWith(MediaFormat.MIMETYPE_VIDEO_AVC)) {
                 //得到video对应的track
@@ -131,6 +132,8 @@ public class VideoDecodeService {
     private Runnable transmit2SurfaceTask = new Runnable() {
         @Override
         public void run() {
+            long startMs = System.currentTimeMillis();
+            int index = 0;
             while (true) {
                 try {
                     if (!mDecoding) {
@@ -142,9 +145,16 @@ public class VideoDecodeService {
                         inputBuffer.clear();
                         int sampleSize = mMediaExtractor.readSampleData(inputBuffer, 0);
                         if (sampleSize > 0) {
-                            mMediaCodec.queueInputBuffer(inputIndex, 0, sampleSize, getPts(), 0);
+                            //这个时间戳是最关键的，体现的是音视频呈现的时间。
+                            mMediaCodec.queueInputBuffer(inputIndex, 0, sampleSize, getPts(index++, mFrameRate), 0);
+                            MediaCodec.BufferInfo mBufferInfo = new MediaCodec.BufferInfo();
+
                             int outputIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_S);
                             while (outputIndex > 0) {
+                                //帧控制
+                                while (mBufferInfo.presentationTimeUs / 1000 > System.currentTimeMillis() - startMs) {
+                                    Thread.sleep(50);
+                                }
                                 mMediaCodec.releaseOutputBuffer(outputIndex, true);
                                 outputIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_S);
                             }
@@ -164,8 +174,11 @@ public class VideoDecodeService {
         }
     };
 
-    private long getPts() {
-        return System.nanoTime() / 1000L;
+    /*
+   frame/rate=time(sec)
+     */
+    private long getPts(int index, int frameRate) {
+        return index * 1000000 / frameRate;
     }
 
 }

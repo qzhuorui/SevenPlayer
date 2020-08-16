@@ -91,7 +91,9 @@ public class MainActivity extends BaseActivity implements PermissionInterface, V
 
     private void jump2Activity(Class activity, Bundle bundle) {
         Intent intent = new Intent(this, activity);
-        intent.putExtras(bundle);
+        if (bundle != null) {
+            intent.putExtras(bundle);
+        }
         startActivity(intent);
     }
 
@@ -154,7 +156,11 @@ public class MainActivity extends BaseActivity implements PermissionInterface, V
             if (!TextUtils.isEmpty(pathStr)) {
                 Bundle bundle = new Bundle();
                 bundle.putString("filePath", pathStr);
-                jump2Activity(DecorderActivity.class, bundle);
+                if (pathStr.contains("video")) {
+                    jump2Activity(DecorderActivity.class, bundle);
+                } else {
+                    Toast.makeText(mContext, "暂不支持查看图片", Toast.LENGTH_SHORT).show();
+                }
             }
         }
     }
