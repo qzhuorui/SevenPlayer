@@ -120,7 +120,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         mCamera.setParameters(parameters);
 
         try {
-            mCamera.setPreviewTexture(surfaceTexture);
+            mCamera.setPreviewTexture(mSurfaceTexture);
         } catch (Exception e) {
             e.printStackTrace();
             cameraBuild = false;

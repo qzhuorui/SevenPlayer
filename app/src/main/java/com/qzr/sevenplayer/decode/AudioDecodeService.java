@@ -50,14 +50,14 @@ public class AudioDecodeService {
             mMediaExtractor.setDataSource(filePath);
             int audioTrack = selectMediaTrack(mMediaExtractor);
             if (audioTrack != -1) {
-                mMediaExtractor.selectTrack(audioTrack);
+                mMediaExtractor.selectTrack(audioTrack);//知道要extract的是哪个了
             } else {
                 throw new RuntimeException("audioTrack is -1");
             }
             int sampleRate = mMediaFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
             int channelCount = mMediaFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
             int minBuffferSize = AudioTrack.getMinBufferSize(sampleRate, channelCount, AudioFormat.ENCODING_PCM_16BIT);
-            minBuffferSize = Math.max(minBuffferSize, 1024);
+            minBuffferSize = Math.max(minBuffferSize, 1024);//AAC每个通道包含的采样数，默认1024
 
             mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, channelCount, AudioFormat.ENCODING_PCM_16BIT, minBuffferSize, AudioTrack.MODE_STREAM);
             mMediaCodec = MediaCodec.createDecoderByType(MIME_TYPE);
@@ -151,7 +151,7 @@ public class AudioDecodeService {
                     if (inputIndex >= 0) {
                         ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputIndex);
                         inputBuffer.clear();
-                        int sampleSize = mMediaExtractor.readSampleData(inputBuffer, 0);
+                        int sampleSize = mMediaExtractor.readSampleData(inputBuffer, 0);//放入数据准备解码
                         if (sampleSize > 0) {
                             //这个时间戳是最关键的，体现的是音视频呈现的时间。
                             mMediaCodec.queueInputBuffer(inputIndex, 0, sampleSize, 0, 0);

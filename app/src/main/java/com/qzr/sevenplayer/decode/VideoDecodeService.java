@@ -151,7 +151,7 @@ public class VideoDecodeService {
 
                             int outputIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_S);
                             while (outputIndex > 0) {
-                                //帧控制
+                                //帧控制，一帧解码出来后，计算sysTime和startMs距离==已播放时间
                                 while (mBufferInfo.presentationTimeUs / 1000 > System.currentTimeMillis() - startMs) {
                                     Thread.sleep(50);
                                 }

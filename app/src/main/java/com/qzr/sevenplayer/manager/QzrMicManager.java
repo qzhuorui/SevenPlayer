@@ -30,6 +30,7 @@ public class QzrMicManager {
     private int mBufferSize;
     private int mMinInputBufferSize;
 
+    //自定义的线程安全Queue
     private QueueArray mPcmBuffer;
 
     private CopyOnWriteArraySet<OnPcmDataGetListener> pcmDataListeners;

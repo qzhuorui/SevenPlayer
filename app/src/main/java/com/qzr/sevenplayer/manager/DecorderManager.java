@@ -20,7 +20,7 @@ public class DecorderManager {
     AudioDecodeService mAudioDecodeService;
 
     public static DecorderManager getInstance() {
-        return DecorderManager.DecorderManagerHolder.decorderManager;
+        return DecorderManagerHolder.decorderManager;
     }
 
     private static class DecorderManagerHolder {

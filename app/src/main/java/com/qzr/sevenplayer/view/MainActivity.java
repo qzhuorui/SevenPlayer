@@ -156,7 +156,7 @@ public class MainActivity extends BaseActivity implements PermissionInterface, V
             if (!TextUtils.isEmpty(pathStr)) {
                 Bundle bundle = new Bundle();
                 bundle.putString("filePath", pathStr);
-                if (pathStr.contains("video")) {
+                if (pathStr.contains("video") || pathStr.contains(".mp4")) {
                     jump2Activity(DecorderActivity.class, bundle);
                 } else {
                     Toast.makeText(mContext, "暂不支持查看图片", Toast.LENGTH_SHORT).show();
@@ -213,8 +213,7 @@ public class MainActivity extends BaseActivity implements PermissionInterface, V
         final String column = "_data";
         final String[] projection = {column};
         try {
-            cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs,
-                    null);
+            cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
             if (cursor != null && cursor.moveToFirst()) {
                 final int column_index = cursor.getColumnIndexOrThrow(column);
                 return cursor.getString(column_index);

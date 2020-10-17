@@ -55,13 +55,14 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
             mMediaCodec = MediaCodec.createEncoderByType(MIME_TYPE);
             mMediaFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 16000, 1);
 
+            //最小缓冲区
             int bufferSize = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
 
             mMediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 32000);
             mMediaFormat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
             mMediaFormat.setInteger(MediaFormat.KEY_CHANNEL_MASK, AudioFormat.CHANNEL_IN_MONO);
             mMediaFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-            mMediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize);
+            mMediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize);//输入缓冲区
 
             mMediaCodec.configure(mMediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 

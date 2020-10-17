@@ -44,7 +44,7 @@
 
 # 上次问题解决方案：
 1.前几秒无关键帧，因为输入源的问题，使用camera的previewCallback来feedback到codec，这种方法不能控制I帧；必须用mediacodec.createInputSurface-openGl-codec
-2.音视频不同步问题：统一STP并且再coder编码完拿到的bufferinfo中传入当前的纳秒，再给到Muxer，而不是在muxer中使用当前时间重新构建（这样的话STP是不正确的）
+2.音视频不同步问题：统一PTS并且再coder编码完拿到的bufferinfo中传入当前的纳秒，再给到Muxer，而不是在muxer中使用当前时间重新构建（这样的话PTS是不正确的）
 3.longClick同时会触发onclick，longClick返回true
 
 ————————————————————————————————————————————————————————————————————————

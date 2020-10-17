@@ -61,6 +61,7 @@ public class Mp4MuxerManager {
         try {
             mMediaMuxer = new MediaMuxer(mFilePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
+            //用于设置csd信息，然后mediaMuxer.addTrack 对应的format
             mVideoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
             mAudioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 16000, 1);
 
