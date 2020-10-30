@@ -95,7 +95,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
         mCamera.setParameters(parameters);
 
-        //camera preview颜色格式
+        //camera preview颜色格式：YUV420SP:NV12,NV21
         parameters.setPreviewFormat(ImageFormat.NV21);
 
         //预览
@@ -108,7 +108,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
 
         //拍照
         Camera.Size bestPicSize = CameraUtil.getOptimalSize(parameters.getSupportedPictureSizes(), cameraParams.picWidth, cameraParams.picHeight);
-        parameters.setPreviewSize(bestPicSize.width, bestPicSize.height);
+        parameters.setPictureSize(bestPicSize.width, bestPicSize.height);
         mCamera.setParameters(parameters);
 
         //fps
