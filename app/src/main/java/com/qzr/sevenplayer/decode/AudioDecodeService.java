@@ -41,7 +41,7 @@ public class AudioDecodeService {
         private static AudioDecodeService audioDecodeService = new AudioDecodeService();
     }
 
-    public AudioDecodeService() {
+    private AudioDecodeService() {
     }
 
     public synchronized AudioDecodeService buildAudioDecorderWithParam(String filePath) {
