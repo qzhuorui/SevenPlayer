@@ -56,6 +56,9 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         private static QzrCameraManager qzrCameraManager = new QzrCameraManager();
     }
 
+    private QzrCameraManager() {
+    }
+
     public static class CameraParams {
         public int preViewWidth = 1080;
         public int preViewHeight = 1920;
@@ -71,7 +74,7 @@ public class QzrCameraManager implements Camera.ErrorCallback, Camera.PreviewCal
         return buildCameraWithParam(params, surfaceTexture);
     }
 
-    public synchronized QzrCameraManager buildCameraWithParam(CameraParams cameraParams, SurfaceTexture surfaceTexture) {
+    private synchronized QzrCameraManager buildCameraWithParam(CameraParams cameraParams, SurfaceTexture surfaceTexture) {
         if (cameraBuild) {
             return this;
         }

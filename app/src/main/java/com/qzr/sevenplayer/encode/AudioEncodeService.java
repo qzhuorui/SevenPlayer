@@ -50,7 +50,7 @@ public class AudioEncodeService implements QzrMicManager.OnPcmDataGetListener {
         return instance;
     }
 
-    public AudioEncodeService() {
+    private AudioEncodeService() {
         try {
             mMediaCodec = MediaCodec.createEncoderByType(MIME_TYPE);
             mMediaFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 16000, 1);

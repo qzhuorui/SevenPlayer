@@ -57,7 +57,7 @@ public class VideoEncodeService {
         return instance;
     }
 
-    public VideoEncodeService() {
+    private VideoEncodeService() {
         try {
             mMediaCodec = MediaCodec.createEncoderByType(MIME_TYPE);
             mMediaFormat = MediaFormat.createVideoFormat(MIME_TYPE, 1920, 1080);

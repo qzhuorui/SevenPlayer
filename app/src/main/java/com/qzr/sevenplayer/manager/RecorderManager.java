@@ -58,7 +58,7 @@ public class RecorderManager implements QzrCameraManager.TakePicDataCallBack, Ha
         private static RecorderManager recorderManager = new RecorderManager();
     }
 
-    public RecorderManager() {
+    private RecorderManager() {
     }
 
     public class RecorderParam {
